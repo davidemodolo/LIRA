@@ -1,0 +1,100 @@
+# GitHub Actions CI/CD Workflow
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.10 3.11 3.12
+
+      - name: Load cached venv
+        run: uv sync --frozen
+
+      - name: Lint with Ruff
+        run: uv run ruff check src/ tests/
+
+      - name: Format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: Type check with MyPy
+        run: uv run mypy src/
+
+      - name: Security audit
+        run: uv run bandit -r src/
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Load cached venv
+        run: uv sync --frozen --python ${{ matrix.python-version }}
+
+      - name: Run tests
+        run: uv run pytest --cov=lira --cov-fail-under=60
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: htmlcov/
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [quality, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Load cached venv
+        run: uv sync --frozen
+
+      - name: Build package
+        run: |
+          pip install build
+          python -m build
+
+      - name: Check built artifacts
+        run: |
+          ls -la dist/
+
+      - name: Verify package
+        run: |
+          pip install dist/*.whl --force-reinstall
+          python -c "import lira; print(lira.__version__)"

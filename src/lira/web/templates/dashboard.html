@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L.I.R.A. - Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent: #38bdf8;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--bg-tertiary);
+        }
+
+        .card h2 {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .stat {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat.positive { color: var(--success); }
+        .stat.negative { color: var(--danger); }
+        .stat.neutral { color: var(--accent); }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge.income { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .badge.expense { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+
+        .chat-container {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .chat-messages {
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+        }
+
+        .chat-message {
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+        }
+
+        .chat-message.user {
+            background: var(--bg-tertiary);
+            margin-left: 2rem;
+        }
+
+        .chat-message.assistant {
+            background: rgba(56, 189, 248, 0.1);
+            margin-right: 2rem;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--bg-tertiary);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .chat-input button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            border: none;
+            background: var(--accent);
+            color: var(--bg-primary);
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .chat-input button:hover {
+            opacity: 0.9;
+        }
+
+        .loading {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>L.I.R.A.</h1>
+            <nav class="nav-links">
+                <a href="/">Dashboard</a>
+                <a href="/accounts">Accounts</a>
+                <a href="/portfolio">Portfolio</a>
+                <a href="/transactions">Transactions</a>
+                <a href="/chat">Chat</a>
+            </nav>
+        </header>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Total Balance</h2>
+                <div class="stat neutral" id="total-balance">Loading...</div>
+                <div class="stat-label">Across all accounts</div>
+            </div>
+            <div class="card">
+                <h2>Monthly Spending</h2>
+                <div class="stat negative" id="monthly-spending">Loading...</div>
+                <div class="stat-label">This month</div>
+            </div>
+            <div class="card">
+                <h2>Portfolio Value</h2>
+                <div class="stat neutral" id="portfolio-value">Loading...</div>
+                <div class="stat-label" id="portfolio-change">Loading...</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Recent Transactions</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Category</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactions-table">
+                        <tr><td colspan="4" class="loading">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card">
+                <h2>Holdings</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Quantity</th>
+                            <th>Value</th>
+                            <th>Gain/Loss</th>
+                        </tr>
+                    </thead>
+                    <tbody id="holdings-table">
+                        <tr><td colspan="4" class="loading">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="chat-container">
+            <h2>Chat with L.I.R.A.</h2>
+            <div class="chat-messages" id="chat-messages"></div>
+            <div class="chat-input">
+                <input type="text" id="chat-input" placeholder="Ask L.I.R.A. anything about your finances...">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+
+        async function fetchDashboard() {
+            try {
+                const [accounts, transactions, portfolio] = await Promise.all([
+                    fetch(`${API_BASE}/accounts`).then(r => r.json()),
+                    fetch(`${API_BASE}/transactions?limit=5`).then(r => r.json()),
+                    fetch(`${API_BASE}/portfolio`).then(r => r.json()),
+                ]);
+
+                const totalBalance = accounts.accounts.reduce((sum, acc) => {
+                    return sum + (acc.type !== 'credit_card' ? acc.balance : -acc.balance);
+                }, 0);
+                document.getElementById('total-balance').textContent = 
+                    `$${totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+                const monthlySpending = transactions.transactions
+                    .filter(t => t.type === 'expense')
+                    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+                document.getElementById('monthly-spending').textContent = 
+                    `-$${monthlySpending.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+                document.getElementById('portfolio-value').textContent = 
+                    `$${portfolio.summary.total_value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+                document.getElementById('portfolio-change').textContent = 
+                    `${portfolio.summary.total_gain_loss >= 0 ? '+' : ''}${portfolio.summary.total_gain_loss_percent.toFixed(2)}%`;
+
+                updateTransactionsTable(transactions.transactions);
+                updateHoldingsTable(portfolio.holdings);
+
+            } catch (error) {
+                console.error('Failed to fetch dashboard:', error);
+            }
+        }
+
+        function updateTransactionsTable(transactions) {
+            const tbody = document.getElementById('transactions-table');
+            if (transactions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4">No transactions found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = transactions.map(t => `
+                <tr>
+                    <td>${new Date(t.date).toLocaleDateString()}</td>
+                    <td>${t.description || t.merchant || 'N/A'}</td>
+                    <td><span class="badge ${t.type}">${t.type}</span></td>
+                    <td style="color: ${t.type === 'income' ? 'var(--success)' : 'var(--danger)'}">
+                        ${t.type === 'income' ? '+' : '-'}$${Math.abs(t.amount).toFixed(2)}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function updateHoldingsTable(holdings) {
+            const tbody = document.getElementById('holdings-table');
+            if (holdings.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4">No holdings found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = holdings.map(h => `
+                <tr>
+                    <td>${h.symbol}</td>
+                    <td>${h.quantity.toFixed(4)}</td>
+                    <td>$${h.market_value.toFixed(2)}</td>
+                    <td style="color: ${h.gain_loss >= 0 ? 'var(--success)' : 'var(--danger)'}">
+                        ${h.gain_loss >= 0 ? '+' : ''}${h.gain_loss.toFixed(2)} (${h.gain_loss_percent.toFixed(1)}%)
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            addChatMessage('user', message);
+            input.value = '';
+
+            addChatMessage('assistant', 'Thinking...', true);
+
+            try {
+                const response = await fetch(`${API_BASE}/agent/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: message }),
+                });
+                const data = await response.json();
+                
+                document.querySelector('.chat-message.assistant:last-child').remove();
+                addChatMessage('assistant', data.response || data.error || 'No response');
+            } catch (error) {
+                document.querySelector('.chat-message.assistant:last-child').remove();
+                addChatMessage('assistant', 'Error: Failed to get response');
+            }
+        }
+
+        function addChatMessage(role, content, isLoading = false) {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = `chat-message ${role}`;
+            div.textContent = content;
+            if (isLoading) div.id = 'loading-message';
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        document.getElementById('chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        fetchDashboard();
+    </script>
+</body>
+</html>

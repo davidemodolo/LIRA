@@ -1,0 +1,98 @@
+# L.I.R.A. Docker Compose Configuration
+# For local development with Ollama (local LLM)
+
+services:
+  # Main L.I.R.A. API Server
+  api:
+    build:
+      context: .
+      target: development
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=sqlite:///./data/lira.db
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      - ollama
+    command: uvicorn lira.api.main:app --host 0.0.0.0 --port 8001 --reload
+
+  # L.I.R.A. CLI (interactive mode)
+  cli:
+    build:
+      context: .
+      target: development
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=sqlite:///./data/lira.db
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - CLI_THEME=dark
+    depends_on:
+      - ollama
+    stdin_open: true
+    tty: true
+    command: python -m lira
+
+  # Local LLM (Ollama) - GPU Support
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles:
+      - gpu
+
+  # Local LLM (Ollama) - CPU Only
+  ollama-cpu:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    profiles:
+      - cpu
+
+  # Database (optional - for shared dev)
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: lira
+      POSTGRES_USER: lira
+      POSTGRES_PASSWORD: lira_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    profiles:
+      - postgres
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    profiles:
+      - cache
+
+volumes:
+  ollama_data:
+  postgres_data:
+  redis_data:
