@@ -1,6 +1,9 @@
-"""Rich-based CLI console for L.I.R.A.
+"""Textual-based TUI console for L.I.R.A.
 
-Provides an interactive terminal interface for financial management.
+Provides an interactive terminal interface with:
+- Scrollable message history
+- Collapsible thinking/tool trace panels
+- Command autocomplete with hints
 """
 
 from __future__ import annotations
@@ -8,20 +11,20 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
-from rich.console import Console, Group
-from rich.live import Live
-from rich.markdown import Markdown
+from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
-from rich.theme import Theme
+from textual.app import App, ComposeResult
+from textual.containers import Container
+from textual.widgets import Header, Input, RichLog, Static
 
 from lira.version import __version__
+
+if TYPE_CHECKING:
+    from lira.core.agent import Agent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,27 +39,439 @@ app = typer.Typer(
     invoke_without_command=True,
 )
 
-console = Console(
-    theme=Theme(
-        {
-            "info": "cyan",
-            "warning": "yellow",
-            "error": "red bold",
-            "success": "green",
+COMMANDS: dict[str, str] = {
+    "/trace": "Toggle trace display",
+    "/toggle-trace": "Toggle trace display",
+    "/show-trace": "Show last trace",
+    "/show": "Show last trace",
+    "/reset": "Clear session context",
+    "/new": "Clear session context",
+    "/help": "Show available commands",
+    "/clear": "Clear message history",
+}
+
+COMMAND_ALIASES: dict[str, str] = {
+    "/t": "/trace",
+    "/sh": "/show-trace",
+    "/s": "/show",
+    "/r": "/reset",
+    "/n": "/new",
+    "/h": "/help",
+    "/c": "/clear",
+    "/q": "exit",
+    "/e": "exit",
+}
+
+
+class CollapsiblePanel(Static):
+    def __init__(self, title: str, collapsed: bool = False) -> None:
+        super().__init__(title)
+        self.collapsed = collapsed
+        self._title = title
+        self._content = ""
+        self._update_styles()
+
+    def _update_styles(self) -> None:
+        arrow = ">" if self.collapsed else "v"
+        self.update(f"[{arrow}] {self._title}")
+
+    def toggle(self) -> None:
+        self.collapsed = not self.collapsed
+        self._update_styles()
+
+    def set_content(self, content: str) -> None:
+        self._content = content
+        if not self.collapsed:
+            self.refresh()
+
+    def render(self) -> str:
+        if self.collapsed:
+            arrow = ">"
+            return f"[{arrow}] {self._title}"
+        arrow = "v"
+        return f"[{arrow}] {self._title}\n{self._content}"
+
+
+class MessageHistory(RichLog):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(
+            markup=True,
+            highlight=False,
+            auto_scroll=True,
+            **kwargs,
+        )
+
+    def add_user_message(self, text: str) -> None:
+        self.write(f"[bold cyan]You >[/bold cyan] {text}")
+
+    def add_lira_message(self, text: str) -> None:
+        self.write(f"[bold green]L.I.R.A. >[/bold green] {text}")
+
+    def add_trace_line(self, text: str) -> None:
+        self.write(f"[dim]{text}[/dim]")
+
+    def add_system_message(self, text: str) -> None:
+        self.write(f"[yellow]{text}[/yellow]")
+
+    def add_error(self, text: str) -> None:
+        self.write(f"[red bold]Error:[/red bold] {text}")
+
+
+class LIRAApp(App):
+    CSS = """
+    Screen {
+        background: $surface;
+    }
+
+    #main {
+        height: 100%;
+        layout: vertical;
+    }
+
+    #history {
+        height: 1fr;
+        border: solid $border;
+        padding: 1;
+    }
+
+    #command-input {
+        width: 100%;
+        dock: bottom;
+    }
+
+    #suggestions {
+        dock: bottom;
+        height: auto;
+        background: $panel;
+        padding: 0 2;
+        color: $text-muted;
+    }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.agent: Agent | None = None
+        self.show_trace = False
+        self.last_trace: list[str] = []
+        self.trace_widget: Static | None = None
+        self._suggestions: list[tuple[str, str]] = []
+        self._warmup_task: asyncio.Task[None] | None = None
+        self._agent_task: asyncio.Task[None] | None = None
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Container(id="main"):
+            yield MessageHistory(id="history")
+            yield Input(placeholder="Type your message or /command...", id="command-input")
+            yield Static("", id="suggestions")
+
+    def on_mount(self) -> None:
+        self.init_agent()
+        self.run_agent_warmup()
+
+    def init_agent(self) -> None:
+        from lira.core.agent import Agent, AgentConfig
+        from lira.db.session import init_database
+
+        init_database()
+
+        self.agent = Agent(
+            config=AgentConfig(
+                enable_self_correction=True,
+            )
+        )
+
+    def run_agent_warmup(self) -> None:
+        history = self.query_one("#history", MessageHistory)
+        history.add_system_message("[dim]Loading model for interactive session...[/dim]")
+
+        async def warmup() -> None:
+            if self.agent is None:
+                return
+            try:
+                await self.agent.llm_provider.acomplete(
+                    "Reply with exactly READY.",
+                    temperature=0,
+                )
+                history.add_system_message("[dim]Model ready. Session memory enabled.[/dim]")
+            except Exception:
+                history.add_system_message(
+                    "[yellow]Model warmup skipped. Continuing anyway.[/yellow]"
+                )
+
+            history.add_system_message("\n[green]Interactive mode started.[/green]")
+            history.add_system_message(
+                "[dim]Commands: /trace, /show-trace, /reset, /help, /clear[/dim]"
+            )
+
+            input_widget = self.query_one("#command-input", Input)
+            input_widget.focus()
+
+        import asyncio
+
+        self._warmup_task = asyncio.create_task(warmup())
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        user_input = event.value.strip()
+        if not user_input:
+            return
+
+        history = self.query_one("#history", MessageHistory)
+        history.add_user_message(user_input)
+
+        if user_input.lower() in ("exit", "quit", "q"):
+            history.add_system_message("[yellow]Goodbye![/yellow]")
+            self.exit()
+            return
+
+        self.handle_command(user_input, history)
+        event.input.value = ""
+        self._update_suggestions("")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        self._update_suggestions(event.value)
+
+    def _update_suggestions(self, value: str) -> None:
+        suggestions_widget = self.query_one("#suggestions", Static)
+        self._suggestions = []
+
+        if not value.startswith("/"):
+            suggestions_widget.update("")
+            return
+
+        matches = []
+        value_lower = value.lower()
+
+        for cmd, desc in COMMANDS.items():
+            if cmd.startswith(value_lower):
+                matches.append((cmd, desc))
+
+        if value_lower in COMMAND_ALIASES:
+            resolved = COMMAND_ALIASES[value_lower]
+            matches.insert(0, (resolved, COMMANDS.get(resolved, "")))
+
+        self._suggestions = matches[:3]
+
+        if self._suggestions:
+            lines = []
+            for cmd, desc in self._suggestions:
+                if cmd == value:
+                    lines.append(f"[bold]{cmd}[/bold] - {desc}")
+                else:
+                    lines.append(f"[dim]{cmd}[/dim] - {desc}")
+            suggestions_widget.update("\n".join(lines))
+        else:
+            suggestions_widget.update("")
+
+    def handle_command(self, user_input: str, history: MessageHistory) -> None:
+        raw_input = user_input.strip()
+        command = raw_input.lower()
+
+        if command in ("exit", "quit", "q"):
+            history.add_system_message("[yellow]Goodbye![/yellow]")
+            self.exit()
+            return
+
+        if command.startswith("/") and command not in COMMANDS:
+            if command in COMMAND_ALIASES:
+                resolved = COMMAND_ALIASES[command]
+                history.add_system_message(f"[dim]Resolved alias: {raw_input} -> {resolved}[/dim]")
+                user_input = resolved
+                command = resolved.lower()
+            else:
+                matches = [cmd for cmd in COMMANDS if cmd.startswith(command)]
+                if len(matches) == 1:
+                    resolved = matches[0]
+                    history.add_system_message(f"[dim]Completed: {raw_input} -> {resolved}[/dim]")
+                    user_input = resolved
+                    command = resolved.lower()
+
+        if command in ("/trace", "/toggle-trace"):
+            self.show_trace = not self.show_trace
+            status = "enabled" if self.show_trace else "disabled"
+            history.add_system_message(f"[cyan]Trace display {status}.[/cyan]")
+            return
+
+        if command in ("/show-trace", "/show"):
+            self.display_trace(history)
+            return
+
+        if command in ("/reset", "/new"):
+            if self.agent is not None:
+                self.agent.reset()
+            self.last_trace = []
+            history.add_system_message("[cyan]Conversation context cleared.[/cyan]")
+            return
+
+        if command in ("/help",):
+            self.display_help(history)
+            return
+
+        if command in ("/clear",):
+            history.clear()
+            history.add_system_message("[dim]History cleared.[/dim]")
+            return
+
+        self.run_agent(user_input, history)
+
+    def display_help(self, history: MessageHistory) -> None:
+        history.add_system_message("[bold]Available commands:[/bold]")
+        for cmd, desc in COMMANDS.items():
+            history.add_system_message(f"  [cyan]{cmd}[/cyan] - {desc}")
+
+    def display_trace(self, history: MessageHistory) -> None:
+        if not self.last_trace:
+            history.add_system_message("[dim]No trace available yet.[/dim]")
+            return
+
+        history.add_system_message("[bold yellow]=== Trace ===[/bold yellow]")
+        for line in self.last_trace:
+            history.add_trace_line(line)
+        history.add_system_message("[bold yellow]============[/bold yellow]")
+
+    def run_agent(self, user_input: str, history: MessageHistory) -> None:
+        history.add_system_message("[dim]Running...[/dim]")
+        import asyncio
+
+        self._agent_task = asyncio.create_task(self.run_agent_async(user_input, history))
+
+    async def run_agent_async(self, user_input: str, history: MessageHistory) -> None:
+        try:
+            trace_lines: list[str] = []
+
+            def on_event(event: Any) -> None:
+                if event.kind == "status" and event.content:
+                    trace_lines.append(f"[yellow]state> {event.content}[/yellow]")
+                    history.add_trace_line(f"state> {event.content}")
+                elif event.kind == "tool_call":
+                    line = self._format_tool_call(event.payload)
+                    trace_lines.append(line)
+                    history.add_trace_line(line)
+                elif event.kind == "tool_result":
+                    line = self._format_tool_result(event.payload)
+                    trace_lines.append(line)
+                    history.add_trace_line(line)
+                elif event.kind == "llm_token" and event.content:
+                    pass
+
+            response = await self._process_query(user_input, on_event)
+
+            self.last_trace = response.get("trace", [])
+
+            if response["error"]:
+                history.add_error(response["error"])
+                if self.show_trace:
+                    self.display_trace(history)
+                return
+
+            history.add_lira_message(response["message"])
+
+            if self.show_trace:
+                self.display_trace(history)
+            elif self.last_trace:
+                history.add_system_message(
+                    f"[dim]Trace hidden. Use /show-trace or /trace to view it. ({len(self.last_trace)} events)[/dim]"
+                )
+        except Exception as e:
+            history.add_error(f"Error: {e}")
+
+    def _format_tool_call(self, payload: dict[str, Any]) -> str:
+        name = str(payload.get("name", "unknown"))
+        arguments = payload.get("arguments", {})
+        rendered_args = self._truncate_text(json.dumps(arguments, default=str), max_chars=180)
+        return f"[cyan]tool> {name}({rendered_args})[/cyan]"
+
+    def _format_tool_result(self, payload: dict[str, Any]) -> str:
+        name = str(payload.get("name", "unknown"))
+        success = bool(payload.get("success"))
+        status = "[green]ok[/green]" if success else "[red]error[/red]"
+
+        if success:
+            preview = self._truncate_text(
+                json.dumps(payload.get("data"), default=str), max_chars=180
+            )
+        else:
+            preview = self._truncate_text(str(payload.get("error", "unknown error")), max_chars=180)
+
+        return f"[cyan]tool< {name} [{status}] {preview}[/cyan]"
+
+    def _truncate_text(self, value: str, max_chars: int = 250) -> str:
+        if len(value) <= max_chars:
+            return value
+        return value[: max_chars - 3] + "..."
+
+    async def _process_query(
+        self,
+        query: str,
+        event_handler: Any = None,
+    ) -> dict[str, Any]:
+        if self.agent is None:
+            return {
+                "message": "Agent not initialized.",
+                "state": "error",
+                "iterations": 0,
+                "data": None,
+                "error": "agent not initialized",
+                "trace": [],
+                "draft": "",
+            }
+
+        trace_lines: list[str] = []
+        draft_chunks: list[str] = []
+        final_response = None
+
+        async for event in self.agent.run_stream(query):
+            if event_handler:
+                event_handler(event)
+
+            if event.kind == "status" and event.content:
+                trace_lines.append(f"state> {event.content}")
+            elif event.kind == "tool_call":
+                trace_lines.append(self._format_tool_call(event.payload))
+            elif event.kind == "tool_result":
+                trace_lines.append(self._format_tool_result(event.payload))
+            elif event.kind == "llm_token" and event.content:
+                draft_chunks.append(event.content)
+            elif event.kind in {"final", "error"}:
+                final_response = event.payload.get("response")
+
+        if final_response is None:
+            return {
+                "message": "I encountered an unexpected runtime state.",
+                "state": "error",
+                "iterations": 0,
+                "data": None,
+                "error": "missing final response",
+                "trace": trace_lines,
+                "draft": "".join(draft_chunks),
+            }
+
+        return {
+            "message": final_response.message,
+            "state": final_response.state,
+            "iterations": final_response.iterations,
+            "data": final_response.data,
+            "error": final_response.error,
+            "trace": trace_lines,
+            "draft": "".join(draft_chunks),
         }
-    ),
-    highlight=True,
-)
+
+
+def run_interactive() -> None:
+    app_instance = LIRAApp()
+    app_instance.run()
 
 
 @app.callback()
 def main(
-    interactive: bool = typer.Option(
-        False, "--interactive", "-i", help="Start interactive mode"
-    ),
+    interactive: bool = typer.Option(False, "--interactive", "-i", help="Start interactive mode"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug mode"),
 ) -> None:
     """L.I.R.A. CLI - AI-native personal finance tracker."""
+    from rich.console import Console
+
+    console = Console()
+
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -76,348 +491,18 @@ def main(
     console.print("[dim]Use --help for available commands[/dim]")
 
 
-def run_interactive() -> None:
-    """Run the interactive chat interface."""
-    from lira.core.agent import Agent, AgentConfig
-    from lira.db.session import init_database
-
-    init_database()
-    agent = Agent(
-        config=AgentConfig(
-            enable_self_correction=True,
-        )
-    )
-
-    session_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(session_loop)
-
-    console.print("[dim]Loading model for interactive session...[/dim]")
-    warmup_ok = session_loop.run_until_complete(warmup_agent(agent))
-    if warmup_ok:
-        console.print("[dim]Model ready. Session memory enabled.[/dim]")
-    else:
-        console.print("[yellow]Model warmup skipped. Continuing anyway.[/yellow]")
-
-    show_trace = False
-    last_trace: list[str] = []
-
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.formatted_text import HTML
-    from prompt_toolkit.history import InMemoryHistory
-
-    prompt_session = PromptSession(history=InMemoryHistory())
-
-    console.print("\n[green]Interactive mode started. Type 'exit' to quit.[/green]")
-    console.print(
-        "[dim]Commands: /trace toggle trace, /show-trace view last trace, /reset clear session[/dim]\n"
-    )
-
-    try:
-        while True:
-            try:
-                user_input = prompt_session.prompt(
-                    HTML("<b><ansiblue>You ></ansiblue></b> ")
-                )
-                command = user_input.strip().lower()
-
-                if command in ("exit", "quit", "q"):
-                    console.print("[yellow]Goodbye![/yellow]")
-                    break
-
-                if not user_input.strip():
-                    continue
-
-                if command in ("/trace", "/toggle-trace"):
-                    show_trace = not show_trace
-                    status = "enabled" if show_trace else "disabled"
-                    console.print(f"[cyan]Trace display {status}.[/cyan]")
-                    continue
-
-                if command in ("/show-trace", "/show"):
-                    display_trace(last_trace)
-                    continue
-
-                if command in ("/reset", "/new"):
-                    agent.reset()
-                    last_trace = []
-                    console.print("[cyan]Conversation context cleared.[/cyan]")
-                    continue
-
-                start_time = time.time()
-                trace_lines: list[str] = []
-                draft_text = ""
-
-                with Live(
-                    _render_live_trace(
-                        draft_text=draft_text, trace_lines=trace_lines, elapsed=0.0
-                    ),
-                    console=console,
-                    refresh_per_second=12,
-                    transient=True,
-                ) as live:
-                    draft_state = {"text": draft_text}
-
-                    def on_event(
-                        event: Any,
-                        trace_ref: list[str] = trace_lines,
-                        start_ref: float = start_time,
-                        live_ref: Live = live,
-                        state: dict[str, str] = draft_state,
-                    ) -> None:
-                        if event.kind == "status" and event.content:
-                            trace_ref.append(f"state> {event.content}")
-                        elif event.kind == "tool_call":
-                            trace_ref.append(_format_tool_call(event.payload))
-                        elif event.kind == "tool_result":
-                            trace_ref.append(_format_tool_result(event.payload))
-                            # Reset draft when new loop starts
-                            state["text"] = ""
-                        elif event.kind == "llm_token" and event.content:
-                            state["text"] += event.content
-
-                        live_ref.update(
-                            _render_live_trace(
-                                draft_text=state["text"],
-                                trace_lines=trace_ref,
-                                elapsed=time.time() - start_ref,
-                            )
-                        )
-
-                    response = session_loop.run_until_complete(
-                        process_query(agent, user_input, event_handler=on_event)
-                    )
-
-                elapsed = time.time() - start_time
-                last_trace = response.get("trace", [])
-                display_response(response, elapsed, show_trace=show_trace)
-
-            except KeyboardInterrupt:
-                console.print("\n[yellow]Interrupted. Goodbye![/yellow]")
-                break
-            except Exception as e:
-                console.print(f"[red]Error: {e}[/red]")
-                if logging.getLogger().level == logging.DEBUG:
-                    logger.exception("Interactive error")
-    finally:
-        try:
-            session_loop.run_until_complete(agent.llm_provider.close())
-        finally:
-            session_loop.close()
-            asyncio.set_event_loop(None)
-
-
-def _truncate_text(value: str, max_chars: int = 250) -> str:
-    """Truncate long text for terminal display."""
-    if len(value) <= max_chars:
-        return value
-    return value[: max_chars - 3] + "..."
-
-
-def _format_tool_call(payload: dict[str, Any]) -> str:
-    """Format a tool call line for trace output."""
-    name = str(payload.get("name", "unknown"))
-    arguments = payload.get("arguments", {})
-    rendered_args = _truncate_text(json.dumps(arguments, default=str), max_chars=180)
-    return f"tool> {name}({rendered_args})"
-
-
-def _format_tool_result(payload: dict[str, Any]) -> str:
-    """Format a tool result line for trace output."""
-    name = str(payload.get("name", "unknown"))
-    success = bool(payload.get("success"))
-    status = "ok" if success else "error"
-
-    if success:
-        preview = _truncate_text(
-            json.dumps(payload.get("data"), default=str), max_chars=180
-        )
-    else:
-        preview = _truncate_text(
-            str(payload.get("error", "unknown error")), max_chars=180
-        )
-
-    return f"tool< {name} [{status}] {preview}"
-
-
-def _render_live_trace(
-    draft_text: str, trace_lines: list[str], elapsed: float
-) -> Panel:
-    """Build the live progress panel while the model is running."""
-    trace_block = (
-        "\n".join(trace_lines[-8:]) if trace_lines else "waiting for activity..."
-    )
-
-    body = Group(
-        Text(f"Running... {elapsed:.1f}s", style="cyan"),
-        Text("Thinking and tools", style="bold yellow"),
-        Text(trace_block, style="yellow"),
-        Text(""),
-        Text("Model response (live)", style="bold green"),
-        (
-            Text(draft_text, style="green")
-            if draft_text
-            else Text("waiting for model output...", style="green")
-        ),
-    )
-    return Panel(body, title="L.I.R.A. Live", border_style="cyan")
-
-
-def display_trace(trace_lines: list[str]) -> None:
-    """Display the most recent trace log."""
-    if not trace_lines:
-        console.print("[dim]No trace available yet.[/dim]")
-        return
-
-    console.print(
-        Panel(
-            "\n".join(trace_lines),
-            title="Thinking and tools",
-            border_style="yellow",
-        )
-    )
-
-
-async def warmup_agent(agent: Any) -> bool:
-    """Warm up the model once at session start."""
-    try:
-        await agent.llm_provider.acomplete(
-            "Reply with exactly READY.",
-            temperature=0,
-        )
-        return True
-    except Exception:
-        return False
-
-
-async def process_query(
-    agent: Any,
-    query: str,
-    event_handler: Callable[[Any], None] | None = None,
-) -> dict[str, Any]:
-    """Process a user query through the agent.
-
-    Args:
-        agent: Persistent agent instance for the interactive session
-        query: Natural language query
-        event_handler: Optional callback for streamed agent events
-
-    Returns:
-        Agent response
-    """
-    trace_lines: list[str] = []
-    draft_chunks: list[str] = []
-    final_response = None
-
-    async for event in agent.run_stream(query):
-        if event_handler:
-            event_handler(event)
-
-        if event.kind == "status" and event.content:
-            trace_lines.append(f"state> {event.content}")
-        elif event.kind == "tool_call":
-            trace_lines.append(_format_tool_call(event.payload))
-        elif event.kind == "tool_result":
-            trace_lines.append(_format_tool_result(event.payload))
-        elif event.kind == "llm_token" and event.content:
-            draft_chunks.append(event.content)
-        elif event.kind in {"final", "error"}:
-            final_response = event.payload.get("response")
-
-    if final_response is None:
-        return {
-            "message": "I encountered an unexpected runtime state.",
-            "state": "error",
-            "iterations": 0,
-            "data": None,
-            "error": "missing final response",
-            "trace": trace_lines,
-            "draft": "".join(draft_chunks),
-        }
-
-    return {
-        "message": final_response.message,
-        "state": final_response.state,
-        "iterations": final_response.iterations,
-        "data": final_response.data,
-        "error": final_response.error,
-        "trace": trace_lines,
-        "draft": "".join(draft_chunks),
-    }
-
-
-def display_response(
-    response: dict[str, Any], elapsed: float = 0, show_trace: bool = False
-) -> None:
-    """Display agent response in Rich format.
-
-    Args:
-        response: Agent response dict
-        elapsed: Time taken in seconds
-        show_trace: Whether to show thinking/tool trace after final response
-    """
-    if response["error"]:
-        console.print(f"[red]Error: {response['error']}[/red]")
-        if show_trace:
-            display_trace(response.get("trace", []))
-        return
-
-    console.print("\n[green bold]L.I.R.A.[/green bold]")
-
-    if elapsed > 0:
-        elapsed_str = f"[dim]({elapsed:.1f}s)[/dim]"
-        console.print(f" {elapsed_str}")
-
-    message = response["message"]
-    if message:
-        console.print(Markdown(message))
-    else:
-        console.print("[dim]No response[/dim]")
-
-    if response.get("data"):
-        console.print("\n[dim]Additional data:[/dim]")
-        console.print(response["data"])
-
-    visualizations = response.get("visualizations", [])
-    if visualizations:
-        console.print(
-            f"\n[cyan]Generated {len(visualizations)} visualization(s)[/cyan]"
-        )
-        for i, img_base64 in enumerate(visualizations, 1):
-            try:
-                import base64
-                import io
-
-                from PIL import Image
-
-                img_data = base64.b64decode(img_base64)
-                img = Image.open(io.BytesIO(img_data))
-                img_path = f"/tmp/lira_plot_{i}.png"
-                img.save(img_path)
-                console.print(f"[dim]Plot saved to: {img_path}[/dim]")
-            except ImportError:
-                console.print(
-                    f"[dim]Visualization {i} available ({len(img_base64)} bytes)[/dim]"
-                )
-            except Exception as e:
-                console.print(f"[dim]Could not save plot {i}: {e}[/dim]")
-
-    if show_trace:
-        display_trace(response.get("trace", []))
-    elif response.get("trace"):
-        console.print("[dim]Trace hidden. Use /show-trace or /trace to view it.[/dim]")
-
-
 @app.command()
 def status() -> None:
     """Show L.I.R.A. system status."""
+    from lira.db.models import Account, Holding, Transaction
     from lira.db.session import DatabaseSession, init_database
+
+    console = Console()
 
     try:
         init_database()
 
         with DatabaseSession() as session:
-            from lira.db.models import Account, Holding, Transaction
-
             account_count = session.query(Account).count()
             transaction_count = session.query(Transaction).count()
             holding_count = session.query(Holding).count()
@@ -441,13 +526,13 @@ def accounts(
     list_all: bool = typer.Option(True, "--list", "-l", help="List all accounts"),
 ) -> None:
     """Manage accounts."""
+    from lira.db.models import Account
     from lira.db.session import DatabaseSession, init_database
 
+    console = Console()
     init_database()
 
     with DatabaseSession() as session:
-        from lira.db.models import Account
-
         accounts = session.query(Account).all()
 
         if not accounts:
@@ -474,13 +559,13 @@ def accounts(
 @app.command()
 def portfolio(
     show: bool = typer.Option(True, "--show", "-s", help="Show portfolio"),
-    update_prices: bool = typer.Option(
-        False, "--update-prices", "-u", help="Update stock prices"
-    ),
+    update_prices: bool = typer.Option(False, "--update-prices", "-u", help="Update stock prices"),
 ) -> None:
     """Manage investment portfolio."""
+    from lira.db.models import Holding
     from lira.db.session import DatabaseSession, init_database
 
+    console = Console()
     init_database()
 
     if update_prices:
@@ -489,8 +574,6 @@ def portfolio(
         console.print("[green]Prices updated![/green]")
 
     with DatabaseSession() as session:
-        from lira.db.models import Holding
-
         holdings = session.query(Holding).all()
 
         if not holdings:
@@ -565,25 +648,15 @@ async def update_all_prices() -> None:
                 if result["success"]:
                     holding.current_price = result["price"]
                     session.commit()
-                    console.print(
-                        f"[green]Updated {holding.symbol}: ${result['price']}[/green]"
-                    )
-            except Exception as e:
-                console.print(f"[red]Failed to update {holding.symbol}: {e}[/red]")
+            except Exception:
+                pass
 
 
 async def fetch_stock_price(symbol: str) -> dict[str, Any]:
-    """Fetch current stock price.
+    """Fetch current stock price."""
+    import yfinance as yf
 
-    Args:
-        symbol: Stock ticker symbol
-
-    Returns:
-        Price data
-    """
     try:
-        import yfinance as yf
-
         ticker = yf.Ticker(symbol)
         info = ticker.info
         price = info.get("currentPrice", info.get("regularMarketPrice"))
@@ -604,6 +677,7 @@ async def fetch_stock_price(symbol: str) -> dict[str, Any]:
 @app.command()
 def version() -> None:
     """Show version information."""
+    console = Console()
     console.print(f"[cyan]L.I.R.A.[/cyan] v{__version__}")
 
 

@@ -37,6 +37,7 @@ dependencies = [
     "yfinance>=0.2.35",
     "fastmcp>=3.2.0",
     "prompt-toolkit>=3.0.0",
+    "textual>=0.90.0",
 ]
 
 [project.optional-dependencies]
@@ -121,6 +122,7 @@ ignore = [
     "PT006",      # pytest parametrize names wrong
     "PT012",      # pytest raise in fixture
     "PT015",      # pytest fixture auto use
+    "PLC0415",    # import should be at top-level (lazy imports for CLI)
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -146,6 +148,7 @@ warn_unused_ignores = true
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 check_untyped_defs = true
+ignore_missing_imports = true
 warn_redundant_casts = true
 warn_unreachable = true
 show_error_codes = true
