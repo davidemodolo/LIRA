@@ -94,5 +94,5 @@ jobs:
 
       - name: Verify package
         run: |
-          uv pip install --system dist/*.whl --force-reinstall
+          uv pip install dist/*.whl --force-reinstall
           uv run python -c "import lira; print(lira.__version__)"
