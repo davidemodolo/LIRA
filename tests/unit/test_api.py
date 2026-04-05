@@ -9,12 +9,12 @@ client = TestClient(app)
 def test_read_root():
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {
-        "name": "L.I.R.A. API",
-        "version": __version__,
-        "status": "online",
-        "agentic": "true",
-    }
+    data = response.json()
+    assert data["name"] == "L.I.R.A. API"
+    assert data["version"] == __version__
+    assert data["status"] == "online"
+    assert data["agentic"] == "true"
+    assert data["dashboard"] == "/dashboard"
 
 
 def test_health_check_deps():

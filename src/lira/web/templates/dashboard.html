@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>L.I.R.A. - Dashboard</title>
+    <title>L.I.R.A. Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root {
             --bg-primary: #0f172a;
@@ -12,703 +14,567 @@
             --text-primary: #f1f5f9;
             --text-secondary: #94a3b8;
             --accent: #38bdf8;
-            --success: #22c55e;
-            --warning: #f59e0b;
-            --danger: #ef4444;
+            --accent-dark: #0ea5e9;
         }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
-            min-height: 100vh;
         }
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
+        .htmx-indicator { opacity: 0; transition: opacity 0.2s; }
+        .htmx-request .htmx-indicator { opacity: 1; }
 
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--bg-tertiary);
-        }
+        .chat-message { max-width: 80%; }
+        .user-message { margin-left: auto; }
+        .assistant-message { margin-right: auto; }
 
-        h1 {
-            font-size: 1.75rem;
-            font-weight: 700;
-            color: var(--accent);
-        }
+        .plot-container img { width: 100%; height: 100%; object-fit: contain; }
 
-        .nav-links {
-            display: flex;
-            gap: 1.5rem;
-        }
-
-        .nav-links a {
-            color: var(--text-secondary);
-            text-decoration: none;
-            transition: color 0.2s;
-        }
-
-        .nav-links a:hover {
-            color: var(--accent);
-        }
-
-        .nav-links a.active {
-            color: var(--accent);
-            font-weight: 600;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .card {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            padding: 1.5rem;
-            border: 1px solid var(--bg-tertiary);
-        }
-
-        .card h2 {
-            font-size: 1rem;
-            color: var(--text-secondary);
-            margin-bottom: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .stat {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .stat.positive { color: var(--success); }
-        .stat.negative { color: var(--danger); }
-        .stat.neutral { color: var(--accent); }
-
-        .stat-label {
-            color: var(--text-secondary);
-            font-size: 0.875rem;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th, td {
-            text-align: left;
-            padding: 0.75rem;
-            border-bottom: 1px solid var(--bg-tertiary);
-        }
-
-        th {
-            color: var(--text-secondary);
-            font-weight: 500;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 0.25rem 0.5rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 500;
-        }
-
-        .badge.income { background: rgba(34, 197, 94, 0.2); color: var(--success); }
-        .badge.expense { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
-
-        .chat-container {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            margin-top: 2rem;
-            display: flex;
-            flex-direction: column;
-            height: 600px;
-        }
-
-        .chat-header {
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid var(--bg-tertiary);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .chat-header h2 {
-            margin-bottom: 0;
-            font-size: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .chat-actions {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .chat-actions button {
-            padding: 0.4rem 0.8rem;
-            border-radius: 6px;
-            border: 1px solid var(--bg-tertiary);
-            background: var(--bg-primary);
-            color: var(--text-secondary);
-            font-size: 0.75rem;
-            cursor: pointer;
+        .nav-btn {
             transition: all 0.2s;
         }
-
-        .chat-actions button:hover {
+        
+        .nav-btn:hover, .nav-btn.active {
             background: var(--bg-tertiary);
-            color: var(--text-primary);
-        }
-
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1rem 1.5rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .chat-message {
-            padding: 0.75rem 1rem;
-            border-radius: 12px;
-            max-width: 85%;
-            line-height: 1.5;
-        }
-
-        .chat-message.user {
-            background: var(--bg-tertiary);
-            align-self: flex-end;
-            margin-left: auto;
-        }
-
-        .chat-message.assistant {
-            background: rgba(56, 189, 248, 0.1);
-            align-self: flex-start;
-            margin-right: auto;
-        }
-
-        .chat-message.error {
-            background: rgba(239, 68, 68, 0.2);
-            color: var(--danger);
-        }
-
-        .chat-message pre {
-            background: var(--bg-primary);
-            padding: 0.75rem;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 0.5rem 0;
-            font-size: 0.85rem;
-        }
-
-        .chat-message code {
-            background: var(--bg-primary);
-            padding: 0.1rem 0.3rem;
-            border-radius: 4px;
-            font-size: 0.9em;
-        }
-
-        .chat-message ul, .chat-message ol {
-            margin: 0.5rem 0;
-            padding-left: 1.5rem;
-        }
-
-        .chat-message p {
-            margin: 0.5rem 0;
-        }
-
-        .chat-input-container {
-            padding: 1rem 1.5rem;
-            border-top: 1px solid var(--bg-tertiary);
-        }
-
-        .chat-input {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .chat-input input {
-            flex: 1;
-            padding: 0.75rem 1rem;
-            border-radius: 8px;
-            border: 1px solid var(--bg-tertiary);
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            font-size: 1rem;
-        }
-
-        .chat-input input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-
-        .chat-input button {
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            border: none;
-            background: var(--accent);
-            color: var(--bg-primary);
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity 0.2s;
-        }
-
-        .chat-input button:hover {
-            opacity: 0.9;
-        }
-
-        .chat-input button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .quick-actions {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 0.75rem;
-            flex-wrap: wrap;
-        }
-
-        .quick-actions button {
-            padding: 0.4rem 0.75rem;
-            border-radius: 6px;
-            border: 1px solid var(--bg-tertiary);
-            background: var(--bg-primary);
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .quick-actions button:hover {
-            background: var(--accent);
-            color: var(--bg-primary);
-            border-color: var(--accent);
-        }
-
-        .visualizations-container {
-            margin-top: 2rem;
-            display: none;
-        }
-
-        .visualizations-container.has-plots {
-            display: block;
-        }
-
-        .visualizations-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .visualizations-header h2 {
-            font-size: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .visualizations-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-            gap: 1rem;
-        }
-
-        .plot-card {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            padding: 1rem;
-            border: 1px solid var(--bg-tertiary);
-        }
-
-        .plot-card img {
-            width: 100%;
-            height: auto;
-            border-radius: 8px;
-        }
-
-        .plot-title {
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-            margin-top: 0.5rem;
-            text-align: center;
-        }
-
-        .loading {
-            text-align: center;
-            color: var(--text-secondary);
-            padding: 2rem;
-        }
-
-        .typing-indicator {
-            display: flex;
-            gap: 0.25rem;
-            padding: 0.75rem 1rem;
-            align-items: center;
-        }
-
-        .typing-indicator span {
-            width: 8px;
-            height: 8px;
-            background: var(--text-secondary);
-            border-radius: 50%;
-            animation: typing 1.4s infinite;
-        }
-
-        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-
-        @keyframes typing {
-            0%, 60%, 100% { transform: translateY(0); }
-            30% { transform: translateY(-4px); }
-        }
-
-        .welcome-message {
-            text-align: center;
-            color: var(--text-secondary);
-            padding: 2rem;
-        }
-
-        .welcome-message h3 {
-            color: var(--accent);
-            margin-bottom: 1rem;
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>L.I.R.A.</h1>
-            <nav class="nav-links">
-                <a href="/" class="active">Dashboard</a>
-                <a href="/accounts">Accounts</a>
-                <a href="/portfolio">Portfolio</a>
-                <a href="/transactions">Transactions</a>
-            </nav>
-        </header>
-
-        <div class="grid">
-            <div class="card">
-                <h2>Total Balance</h2>
-                <div class="stat neutral" id="total-balance">Loading...</div>
-                <div class="stat-label">Across all accounts</div>
-            </div>
-            <div class="card">
-                <h2>Monthly Spending</h2>
-                <div class="stat negative" id="monthly-spending">Loading...</div>
-                <div class="stat-label">This month</div>
-            </div>
-            <div class="card">
-                <h2>Portfolio Value</h2>
-                <div class="stat neutral" id="portfolio-value">Loading...</div>
-                <div class="stat-label" id="portfolio-change">Loading...</div>
+<body class="h-screen flex overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-slate-800 p-4 flex flex-col flex-shrink-0">
+        <h1 class="text-2xl font-bold text-cyan-400 mb-6">L.I.R.A.</h1>
+        <nav class="space-y-1">
+            <button onclick="showSection('dashboard')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Dashboard</button>
+            <button onclick="showSection('transactions')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Transactions</button>
+            <button onclick="showSection('accounts')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Payment Methods</button>
+            <button onclick="showSection('investments')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Investments</button>
+            <button onclick="showSection('chat')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Chat</button>
+        </nav>
+        <div class="mt-auto pt-4 border-t border-slate-700">
+            <div class="text-sm text-slate-400">
+                <div>Net Worth</div>
+                <div id="nav-net-worth" class="text-xl font-bold text-green-400">$0.00</div>
             </div>
         </div>
+    </aside>
 
-        <div class="grid">
-            <div class="card">
-                <h2>Recent Transactions</h2>
-                <table>
-                    <thead>
+    <!-- Main Content -->
+    <main class="flex-1 overflow-auto p-6">
+        <!-- Dashboard Section -->
+        <section id="dashboard-section" class="space-y-6">
+            <h2 class="text-2xl font-bold mb-4">Dashboard</h2>
+            
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <div class="text-slate-400 text-sm">Net Worth</div>
+                    <div id="summary-net-worth" class="text-2xl font-bold text-green-400">Loading...</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <div class="text-slate-400 text-sm">Income</div>
+                    <div id="summary-income" class="text-2xl font-bold text-blue-400">Loading...</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <div class="text-slate-400 text-sm">Expenses</div>
+                    <div id="summary-expenses" class="text-2xl font-bold text-red-400">Loading...</div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <div class="text-slate-400 text-sm">Investments</div>
+                    <div id="summary-investments" class="text-2xl font-bold text-yellow-400">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Payment Methods Summary -->
+            <div class="bg-slate-800 p-4 rounded-lg">
+                <div class="text-slate-400 text-sm">Payment Methods Balance</div>
+                <div id="summary-payment-balance" class="text-2xl font-bold text-purple-400">Loading...</div>
+            </div>
+
+            <!-- Plots -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <h3 class="text-lg font-bold mb-2">Spending by Category</h3>
+                    <div id="plot-category-spending" class="h-64 flex items-center justify-center text-slate-500">
+                        Loading...
+                    </div>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <h3 class="text-lg font-bold mb-2">Monthly Spending</h3>
+                    <div id="plot-monthly-spending" class="h-64 flex items-center justify-center text-slate-500">
+                        Loading...
+                    </div>
+                </div>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-lg">
+                <h3 class="text-lg font-bold mb-2">Net Worth History</h3>
+                <div id="plot-net-worth" class="h-64 flex items-center justify-center text-slate-500">
+                    Loading...
+                </div>
+            </div>
+
+            <!-- Persistent Plots -->
+            <div class="bg-slate-800 p-4 rounded-lg">
+                <h3 class="text-lg font-bold mb-2">Your Persistent Plots</h3>
+                <div id="persistent-plots" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="text-slate-500">No persistent plots yet. Ask the chat to add one!</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Transactions Section -->
+        <section id="transactions-section" class="hidden space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-2xl font-bold">Transactions</h2>
+                <div class="flex gap-2">
+                    <select id="filter-type" class="bg-slate-700 px-3 py-2 rounded" onchange="loadTransactions()">
+                        <option value="">All Types</option>
+                        <option value="income">Income</option>
+                        <option value="expense">Expense</option>
+                        <option value="transfer">Transfer</option>
+                    </select>
+                    <input type="date" id="filter-start" class="bg-slate-700 px-3 py-2 rounded" onchange="loadTransactions()">
+                    <input type="date" id="filter-end" class="bg-slate-700 px-3 py-2 rounded" onchange="loadTransactions()">
+                </div>
+            </div>
+            <div class="bg-slate-800 rounded-lg overflow-hidden">
+                <table class="w-full">
+                    <thead class="bg-slate-700">
                         <tr>
-                            <th>Date</th>
-                            <th>Description</th>
-                            <th>Category</th>
-                            <th>Amount</th>
+                            <th class="px-4 py-3 text-left">Date</th>
+                            <th class="px-4 py-3 text-left">Type</th>
+                            <th class="px-4 py-3 text-left">Description</th>
+                            <th class="px-4 py-3 text-right">Amount</th>
+                            <th class="px-4 py-3 text-left">Category</th>
+                            <th class="px-4 py-3 text-left">Payment</th>
                         </tr>
                     </thead>
-                    <tbody id="transactions-table">
-                        <tr><td colspan="4" class="loading">Loading...</td></tr>
+                    <tbody id="transactions-table" class="divide-y divide-slate-700">
+                        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
-            <div class="card">
-                <h2>Holdings</h2>
-                <table>
-                    <thead>
+        </section>
+
+        <!-- Accounts Section -->
+        <section id="accounts-section" class="hidden space-y-4">
+            <h2 class="text-2xl font-bold">Payment Methods</h2>
+            <div id="accounts-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="text-slate-500">Loading...</div>
+            </div>
+        </section>
+
+        <!-- Investments Section -->
+        <section id="investments-section" class="hidden space-y-4">
+            <h2 class="text-2xl font-bold">Investments</h2>
+            <div class="bg-slate-800 rounded-lg overflow-hidden">
+                <table class="w-full">
+                    <thead class="bg-slate-700">
                         <tr>
-                            <th>Symbol</th>
-                            <th>Quantity</th>
-                            <th>Value</th>
-                            <th>Gain/Loss</th>
+                            <th class="px-4 py-3 text-left">Symbol</th>
+                            <th class="px-4 py-3 text-left">Name</th>
+                            <th class="px-4 py-3 text-right">Quantity</th>
+                            <th class="px-4 py-3 text-right">Avg Cost</th>
+                            <th class="px-4 py-3 text-right">Current Price</th>
+                            <th class="px-4 py-3 text-right">Market Value</th>
                         </tr>
                     </thead>
-                    <tbody id="holdings-table">
-                        <tr><td colspan="4" class="loading">Loading...</td></tr>
+                    <tbody id="holdings-table" class="divide-y divide-slate-700">
+                        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
-        <div class="chat-container" id="chat-container">
-            <div class="chat-header">
-                <h2>Chat with L.I.R.A.</h2>
-                <div class="chat-actions">
-                    <button onclick="clearHistory()" title="Clear conversation">Clear</button>
+        <!-- Chat Section -->
+        <section id="chat-section" class="hidden flex flex-col h-full">
+            <h2 class="text-2xl font-bold mb-4">Chat with L.I.R.A.</h2>
+            
+            <!-- Session Plots -->
+            <div class="bg-slate-800 p-4 rounded-lg mb-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-lg font-bold">Session Plots (Temporary)</h3>
+                    <button onclick="clearSessionPlots()" class="text-sm text-slate-400 hover:text-white">Clear</button>
+                </div>
+                <div id="session-plots" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="text-slate-500 text-sm">Ask "add a plot showing..." to create temporary plots</div>
                 </div>
             </div>
-            <div class="chat-messages" id="chat-messages">
-                <div class="welcome-message">
-                    <h3>Welcome to L.I.R.A.</h3>
-                    <p>Ask me anything about your finances, add transactions, or create visualizations.</p>
-                </div>
-            </div>
-            <div class="chat-input-container">
-                <div class="quick-actions">
-                    <button onclick="quickAction('Show my recent transactions')">Recent Transactions</button>
-                    <button onclick="quickAction('Show my account balances')">Account Balances</button>
-                    <button onclick="quickAction('Create a pie chart of spending by category')">Spending Chart</button>
-                    <button onclick="quickAction('Add a new transaction')">Add Transaction</button>
-                </div>
-                <div class="chat-input">
-                    <input type="text" id="chat-input" placeholder="Ask L.I.R.A. anything about your finances...">
-                    <button onclick="sendMessage()" id="send-button">Send</button>
-                </div>
-            </div>
-        </div>
 
-        <div class="visualizations-container" id="visualizations-container">
-            <div class="visualizations-header">
-                <h2>Visualizations</h2>
-                <button onclick="clearVisualizations()" style="padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid var(--bg-tertiary); background: var(--bg-primary); color: var(--text-secondary); font-size: 0.75rem; cursor: pointer;">Clear All</button>
+            <!-- Chat Messages -->
+            <div id="chat-messages" class="flex-1 bg-slate-800 rounded-lg p-4 overflow-y-auto mb-4 space-y-4 min-h-[300px]">
+                <div class="text-slate-500 text-center">Start a conversation with L.I.R.A...</div>
             </div>
-            <div class="visualizations-grid" id="visualizations-grid"></div>
-        </div>
-    </div>
+
+            <!-- Chat Input -->
+            <div class="flex gap-2">
+                <input type="text" id="chat-input" class="flex-1 bg-slate-700 px-4 py-3 rounded-lg" 
+                       placeholder="Ask L.I.R.A. anything..." onkeypress="handleChatKeypress(event)">
+                <button onclick="sendChat()" class="bg-cyan-600 px-6 py-3 rounded-lg hover:bg-cyan-700 transition">Send</button>
+            </div>
+        </section>
+    </main>
 
     <script>
-        const API_BASE = '';
-        let conversationHistory = [];
-        let visualizations = [];
+        let currentSection = 'dashboard';
+        let chatHistory = [];
+        let sessionPlots = [];
+        let categoriesMap = {};
 
-        async function fetchDashboard() {
-            try {
-                const [accounts, transactions, portfolio] = await Promise.all([
-                    fetch(`${API_BASE}/accounts`).then(r => r.json()),
-                    fetch(`${API_BASE}/transactions?limit=5`).then(r => r.json()),
-                    fetch(`${API_BASE}/portfolio`).then(r => r.json()),
-                ]);
+        function showSection(section) {
+            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+            document.getElementById(section + '-section').classList.remove('hidden');
+            currentSection = section;
 
-                const totalBalance = accounts.accounts.reduce((sum, acc) => {
-                    return sum + (acc.type !== 'credit_card' ? acc.balance : -acc.balance);
-                }, 0);
-                document.getElementById('total-balance').textContent = 
-                    `$${totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+            if (section === 'dashboard') loadDashboard();
+            if (section === 'transactions') loadTransactions();
+            if (section === 'accounts') loadAccounts();
+            if (section === 'investments') loadInvestments();
+            if (section === 'chat') loadChatInit();
+        }
 
-                const monthlySpending = transactions.transactions
-                    .filter(t => t.type === 'expense')
-                    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-                document.getElementById('monthly-spending').textContent = 
-                    `-$${monthlySpending.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+        }
 
-                document.getElementById('portfolio-value').textContent = 
-                    `$${portfolio.summary.total_value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-                document.getElementById('portfolio-change').textContent = 
-                    `${portfolio.summary.total_gain_loss >= 0 ? '+' : ''}${portfolio.summary.total_gain_loss_percent.toFixed(2)}%`;
-
-                updateTransactionsTable(transactions.transactions);
-                updateHoldingsTable(portfolio.holdings);
-
-            } catch (error) {
-                console.error('Failed to fetch dashboard:', error);
+        async function loadCategories() {
+            const data = await fetch('/api/dashboard/categories').then(r => r.json());
+            categoriesMap = {};
+            for (const cat of data) {
+                categoriesMap[cat.id] = cat.name;
+                if (cat.subcategories) {
+                    for (const sub of cat.subcategories) {
+                        categoriesMap[sub.id] = `${cat.name} > ${sub.name}`;
+                    }
+                }
             }
         }
 
-        function updateTransactionsTable(transactions) {
-            const tbody = document.getElementById('transactions-table');
-            if (transactions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4">No transactions found</td></tr>';
-                return;
-            }
-            tbody.innerHTML = transactions.map(t => `
-                <tr>
-                    <td>${new Date(t.date).toLocaleDateString()}</td>
-                    <td>${t.description || t.merchant || 'N/A'}</td>
-                    <td><span class="badge ${t.type}">${t.type}</span></td>
-                    <td style="color: ${t.type === 'income' ? 'var(--success)' : 'var(--danger)'}">
-                        ${t.type === 'income' ? '+' : '-'}$${Math.abs(t.amount).toFixed(2)}
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        function updateHoldingsTable(holdings) {
-            const tbody = document.getElementById('holdings-table');
-            if (holdings.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4">No holdings found</td></tr>';
-                return;
-            }
-            tbody.innerHTML = holdings.map(h => `
-                <tr>
-                    <td>${h.symbol}</td>
-                    <td>${h.quantity.toFixed(4)}</td>
-                    <td>$${h.market_value.toFixed(2)}</td>
-                    <td style="color: ${h.gain_loss >= 0 ? 'var(--success)' : 'var(--danger)'}">
-                        ${h.gain_loss >= 0 ? '+' : ''}${h.gain_loss.toFixed(2)} (${h.gain_loss_percent.toFixed(1)}%)
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        function quickAction(text) {
-            document.getElementById('chat-input').value = text;
-            sendMessage();
-        }
-
-        function clearHistory() {
-            conversationHistory = [];
-            const container = document.getElementById('chat-messages');
-            container.innerHTML = `
-                <div class="welcome-message">
-                    <h3>Welcome to L.I.R.A.</h3>
-                    <p>Ask me anything about your finances, add transactions, or create visualizations.</p>
-                </div>
-            `;
-            clearVisualizations();
-        }
-
-        function clearVisualizations() {
-            visualizations = [];
-            const container = document.getElementById('visualizations-container');
-            container.classList.remove('has-plots');
-            document.getElementById('visualizations-grid').innerHTML = '';
-        }
-
-        function addVisualization(imageBase64, title = 'Chart') {
-            visualizations.push({ base64: imageBase64, title: title });
-            const container = document.getElementById('visualizations-container');
-            container.classList.add('has-plots');
+        async function loadDashboard() {
+            await loadCategories();
             
-            const grid = document.getElementById('visualizations-grid');
-            const card = document.createElement('div');
-            card.className = 'plot-card';
-            card.innerHTML = `
-                <img src="data:image/png;base64,${imageBase64}" alt="${title}">
-                <div class="plot-title">${title}</div>
-            `;
-            grid.appendChild(card);
+            const summary = await fetch('/api/dashboard/summary').then(r => r.json());
+            document.getElementById('summary-net-worth').textContent = formatCurrency(summary.net_worth);
+            document.getElementById('summary-income').textContent = formatCurrency(summary.total_income);
+            document.getElementById('summary-expenses').textContent = formatCurrency(summary.total_expenses);
+            document.getElementById('summary-payment-balance').textContent = formatCurrency(summary.payment_balance);
+            document.getElementById('summary-investments').textContent = formatCurrency(summary.investments);
+            document.getElementById('nav-net-worth').textContent = formatCurrency(summary.net_worth);
+
+            const spendingData = await fetch('/api/dashboard/spending-by-category?months=12').then(r => r.json());
+            if (spendingData.length > 0) {
+                generatePlot('plot-category-spending', 'pie', 'Spending by Category', spendingData, 'category', 'amount');
+            }
+
+            const monthlyData = await fetch('/api/dashboard/monthly-spending?months=6').then(r => r.json());
+            if (monthlyData.length > 0) {
+                generatePlot('plot-monthly-spending', 'bar', 'Monthly Spending', monthlyData, 'month', 'amount');
+            }
+
+            const nwData = await fetch('/api/dashboard/net-worth-history?months=4').then(r => r.json());
+            if (nwData.length > 0) {
+                generatePlot('plot-net-worth', 'line', 'Net Worth History', nwData, 'date', 'net_worth');
+            }
+
+            loadPersistentPlots();
         }
 
-        function renderMessage(content) {
-            let html = content;
-            html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-            html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-            html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-            html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
-            html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-            html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-            html = html.replace(/\n\n/g, '</p><p>');
-            html = '<p>' + html + '</p>';
-            html = html.replace(/<p><\/p>/g, '');
-            return html;
+        async function loadPersistentPlots() {
+            const plots = await fetch('/api/dashboard/plots').then(r => r.json());
+            const container = document.getElementById('persistent-plots');
+            
+            if (plots.length === 0) {
+                container.innerHTML = '<div class="text-slate-500">No persistent plots yet. Ask the chat to add one!</div>';
+                return;
+            }
+
+            container.innerHTML = '';
+            for (const plot of plots) {
+                const data = await fetchPlotData(plot);
+                const div = document.createElement('div');
+                div.className = 'bg-slate-700 p-3 rounded';
+                div.innerHTML = `<h4 class="font-bold mb-2">${plot.title}</h4><div id="plot-p-${plot.id}" class="h-48"></div>`;
+                container.appendChild(div);
+                if (data.length > 0) {
+                    generatePlot(`plot-p-${plot.id}`, plot.plot_type, plot.title, data, plot.x_key, plot.y_key);
+                }
+            }
         }
 
-        function addChatMessage(role, content, isLoading = false) {
+        async function fetchPlotData(plot) {
+            const title = plot.title.toLowerCase();
+            if (title.includes('category')) {
+                return await fetch('/api/dashboard/spending-by-category?months=12').then(r => r.json());
+            }
+            if (title.includes('monthly')) {
+                return await fetch('/api/dashboard/monthly-spending?months=6').then(r => r.json());
+            }
+            if (title.includes('net worth') || title.includes('nw')) {
+                return await fetch('/api/dashboard/net-worth-history?months=4').then(r => r.json());
+            }
+            return [];
+        }
+
+        async function generatePlot(containerId, plotType, title, data, xKey, yKey) {
+            try {
+                const response = await fetch('/api/plots/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plot_type: plotType, title, data, x_key: xKey, y_key: yKey })
+                });
+                const result = await response.json();
+                document.getElementById(containerId).innerHTML = `<img src="${result.image}" class="w-full h-full object-contain">`;
+            } catch (e) {
+                document.getElementById(containerId).textContent = 'Error generating plot';
+            }
+        }
+
+        async function loadTransactions() {
+            const type = document.getElementById('filter-type').value;
+            const start = document.getElementById('filter-start').value;
+            const end = document.getElementById('filter-end').value;
+            
+            let url = '/api/dashboard/transactions?limit=50';
+            if (type) url += `&transaction_type=${type}`;
+            if (start) url += `&start_date=${start}`;
+            if (end) url += `&end_date=${end}`;
+
+            const data = await fetch(url).then(r => r.json());
+            const tbody = document.getElementById('transactions-table');
+            
+            if (data.transactions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No transactions found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.transactions.map(t => `
+                <tr class="hover:bg-slate-700">
+                    <td class="px-4 py-3">${t.date.split('T')[0]}</td>
+                    <td class="px-4 py-3"><span class="px-2 py-1 rounded text-sm ${t.type === 'expense' ? 'bg-red-900 text-red-300' : t.type === 'income' ? 'bg-green-900 text-green-300' : 'bg-blue-900 text-blue-300'}">${t.type}</span></td>
+                    <td class="px-4 py-3">${t.description || '-'}</td>
+                    <td class="px-4 py-3 text-right ${t.type === 'expense' ? 'text-red-400' : 'text-green-400'}">${formatCurrency(t.amount)}</td>
+                    <td class="px-4 py-3">${t.category_id ? (categoriesMap[t.category_id] || t.category_id) : '-'}</td>
+                    <td class="px-4 py-3">${t.payment_method_id || '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadAccounts() {
+            const data = await fetch('/api/dashboard/payment-methods').then(r => r.json());
+            const grid = document.getElementById('accounts-grid');
+            
+            if (data.length === 0) {
+                grid.innerHTML = '<div class="text-slate-500">No payment methods found</div>';
+                return;
+            }
+
+            grid.innerHTML = data.map(pm => `
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <div class="text-slate-400 text-sm">${pm.name}${pm.is_default ? ' (Default)' : ''}</div>
+                    <div class="text-2xl font-bold text-purple-400">${formatCurrency(pm.balance)}</div>
+                </div>
+            `).join('');
+        }
+
+        async function loadInvestments() {
+            const data = await fetch('/api/dashboard/holdings').then(r => r.json());
+            const tbody = document.getElementById('holdings-table');
+            
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No holdings found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(h => `
+                <tr class="hover:bg-slate-700">
+                    <td class="px-4 py-3 font-bold">${h.symbol}</td>
+                    <td class="px-4 py-3">${h.name || '-'}</td>
+                    <td class="px-4 py-3 text-right">${h.quantity}</td>
+                    <td class="px-4 py-3 text-right">${formatCurrency(h.average_cost)}</td>
+                    <td class="px-4 py-3 text-right">${h.current_price ? formatCurrency(h.current_price) : '-'}</td>
+                    <td class="px-4 py-3 text-right text-yellow-400">${formatCurrency(h.market_value)}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadChatInit() {
+            if (chatHistory.length > 0) return;
+            
+            const init = await fetch('/api/dashboard/summary').then(r => r.json());
+            addMessage('assistant', `Hello! I can help you manage your finances. Your current net worth is ${formatCurrency(init.net_worth)}. 
+
+I can help you with:
+- Adding transactions and categorizing them
+- Transferring between payment methods
+- Creating plots (say "add a plot showing spending by category")
+- And much more!
+
+What would you like to do?`);
+        }
+
+        function handleChatKeypress(event) {
+            if (event.key === 'Enter') sendChat();
+        }
+
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            addMessage('user', message);
+            chatHistory.push({ role: 'user', content: message });
+            input.value = '';
+            
+            // Create a streaming message container
+            const messages = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-message assistant-message bg-slate-700 p-3 rounded-lg';
+            const contentDiv = document.createElement('div');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'typing-indicator';
+            typingDiv.innerHTML = '<span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse mr-1"></span><span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse mr-1"></span><span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse"></span>';
+            contentDiv.appendChild(typingDiv);
+            msgDiv.appendChild(contentDiv);
+            messages.appendChild(msgDiv);
+            messages.scrollTop = messages.scrollHeight;
+
+            let fullContent = '';
+            let traceEvents = [];
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: chatHistory,
+                        stream: true
+                    })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                // Remove typing indicator
+                if (typingDiv) typingDiv.remove();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n').filter(line => line.trim());
+                    
+                    for (const line of lines) {
+                        try {
+                            const event = JSON.parse(line);
+                            traceEvents.push(event);
+                            
+                            if (event.kind === 'llm_token' && event.content) {
+                                fullContent += event.content;
+                                contentDiv.innerHTML = escapeHtml(fullContent);
+                                messages.scrollTop = messages.scrollHeight;
+                            } else if (event.kind === 'status') {
+                                // Could show status updates
+                            }
+                        } catch (e) {
+                            // Skip malformed JSON
+                        }
+                    }
+                }
+
+                // Add trace panel if there are events
+                let traceHtml = '';
+                if (traceEvents.length > 0) {
+                    traceHtml = '<div class="mt-2 p-2 bg-slate-900 rounded text-xs font-mono overflow-x-auto max-h-40">';
+                    for (const event of traceEvents) {
+                        if (event.kind === 'status' && event.content) {
+                            traceHtml += `<div class="text-yellow-500">${escapeHtml(event.content)}</div>`;
+                        } else if (event.kind === 'tool_call' && event.payload) {
+                            const args = JSON.stringify(event.payload.arguments || {}).substring(0, 100);
+                            traceHtml += `<div class="text-cyan-400">tool&gt; ${event.payload.name}(${args})</div>`;
+                        } else if (event.kind === 'tool_result' && event.payload) {
+                            const status = event.payload.success ? '<span class="text-green-400">ok</span>' : '<span class="text-red-400">error</span>';
+                            const preview = JSON.stringify(event.payload.data || event.payload.error || {}).substring(0, 80);
+                            traceHtml += `<div class="text-cyan-400">tool&lt; ${event.payload.name} [${status}] ${preview}</div>`;
+                        }
+                    }
+                    traceHtml += '</div>';
+                    contentDiv.innerHTML = escapeHtml(fullContent) + traceHtml;
+                }
+
+                chatHistory.push({ role: 'assistant', content: fullContent });
+
+                const responseText = fullContent.toLowerCase();
+                if (responseText.includes('persistent') || responseText.includes('dashboard')) {
+                    loadPersistentPlots();
+                }
+                
+                if (responseText.includes('plot') && responseText.includes('session')) {
+                    loadSessionPlots(message);
+                }
+
+                refreshCurrentSection();
+            } catch (e) {
+                if (typingDiv) typingDiv.remove();
+                contentDiv.innerHTML = `<div class="text-red-400">Error: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/\n/g, '<br>');
+        }
+
+        async function loadSessionPlots(prompt) {
+            const plots = await fetch('/api/dashboard/plots').then(r => r.json());
+            if (plots.length > 0) {
+                const container = document.getElementById('session-plots');
+                container.innerHTML = '';
+                for (const plot of plots.slice(0, 2)) {
+                    const data = await fetchPlotData(plot);
+                    if (data.length > 0) {
+                        const div = document.createElement('div');
+                        div.className = 'bg-slate-700 p-3 rounded';
+                        div.innerHTML = `<h4 class="font-bold mb-2">${plot.title}</h4><div id="session-plot-${plot.id}" class="h-48"></div>`;
+                        container.appendChild(div);
+                        generatePlot(`session-plot-${plot.id}`, plot.plot_type, plot.title, data, plot.x_key, plot.y_key);
+                    }
+                }
+            }
+        }
+
+        function clearSessionPlots() {
+            document.getElementById('session-plots').innerHTML = '<div class="text-slate-500 text-sm">Ask "add a plot showing..." to create temporary plots</div>';
+        }
+
+        function refreshCurrentSection() {
+            if (currentSection === 'dashboard') loadDashboard();
+            if (currentSection === 'transactions') loadTransactions();
+            if (currentSection === 'accounts') loadAccounts();
+            if (currentSection === 'investments') loadInvestments();
+        }
+
+        function addMessage(role, content, isLoading = false) {
             const container = document.getElementById('chat-messages');
             const div = document.createElement('div');
             
             if (isLoading) {
-                div.className = `chat-message ${role} typing-indicator`;
-                div.id = 'loading-message';
-                div.innerHTML = '<span></span><span></span><span></span>';
-            } else if (role === 'error') {
-                div.className = 'chat-message error';
-                div.innerHTML = content;
+                div.className = `chat-message ${role === 'user' ? 'user-message' : 'assistant-message'} typing-indicator bg-slate-700 p-3 rounded-lg`;
+                div.innerHTML = '<span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse mr-1"></span><span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse mr-1"></span><span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse"></span>';
             } else {
-                div.className = `chat-message ${role}`;
-                if (role === 'assistant') {
-                    div.innerHTML = renderMessage(content);
-                } else {
-                    div.textContent = content;
-                }
+                div.className = `chat-message ${role === 'user' ? 'user-message' : 'assistant-message'} ${role === 'user' ? 'bg-cyan-700' : 'bg-slate-700'} p-3 rounded-lg`;
+                div.innerHTML = `<div class="text-sm text-slate-400 mb-1">${role === 'user' ? 'You' : 'L.I.R.A.'}</div><div>${content}</div>`;
             }
             
             container.appendChild(div);
             container.scrollTop = container.scrollHeight;
         }
 
-        async function sendMessage() {
-            const input = document.getElementById('chat-input');
-            const message = input.value.trim();
-            if (!message) return;
-
-            input.value = '';
-            document.getElementById('send-button').disabled = true;
-
-            conversationHistory.push({ role: 'user', content: message });
-            addChatMessage('user', message);
-            addChatMessage('assistant', '', true);
-
-            try {
-                const response = await fetch(`${API_BASE}/agent/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        messages: conversationHistory.slice(0, -1),
-                        new_message: message
-                    }),
-                });
-
-                const data = await response.json();
-                
-                document.querySelector('.chat-message.assistant:last-child').remove();
-                
-                if (data.error) {
-                    addChatMessage('error', `Error: ${data.error}`);
-                } else {
-                    addChatMessage('assistant', data.response);
-                    
-                    if (data.visualizations && data.visualizations.length > 0) {
-                        data.visualizations.forEach(img => {
-                            addVisualization(img, 'Generated Chart');
-                        });
-                    }
-                    
-                    conversationHistory = data.messages || conversationHistory;
-                }
-            } catch (error) {
-                document.querySelector('.chat-message.assistant:last-child').remove();
-                addChatMessage('error', 'Error: Failed to get response. Please try again.');
-                console.error('Chat error:', error);
-            } finally {
-                document.getElementById('send-button').disabled = false;
-            }
-        }
-
-        document.getElementById('chat-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
-        });
-
-        fetchDashboard();
+        showSection('dashboard');
     </script>
 </body>
 </html>

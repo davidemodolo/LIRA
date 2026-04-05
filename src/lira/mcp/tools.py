@@ -109,6 +109,12 @@ async def create_transaction(
     amount: float,
     transaction_type: str,
     description: str = "",
+    category_id: int | None = None,
+    category_name: str | None = None,
+    secondary_category_id: int | None = None,
+    secondary_category_name: str | None = None,
+    payment_method_id: int | None = None,
+    payment_method_name: str | None = None,
 ) -> dict[str, Any]:
     """Create a new real-world financial transaction representing an income or expense.
 
@@ -117,18 +123,59 @@ async def create_transaction(
     (an expense will decrease it, an income will increase it).
 
     Args:
-        account_id: The unique database id of the account this transaction applies to.
+        account_id: The unique database id of the account this applies to (use list_accounts).
         amount: The monetary value of the transaction. For expenses, use a negative float.
         transaction_type: 'expense', 'income', or 'transfer'. Affects account balance logic.
         description: A short memo describing the purchase, vendor, or reasoning.
+        category_id: The primary category id (use get_categories to find ids).
+        category_name: The primary category name (e.g., "FOOD", "FOOD > groceries"). If provided, resolves to id.
+        secondary_category_id: The secondary category id for additional categorization.
+        secondary_category_name: The secondary category name.
+        payment_method_id: The payment method id (use get_payment_methods to find ids).
+        payment_method_name: The payment method name (e.g., "Cash", "Debit Card"). If provided, resolves to ID.
 
     Returns:
         A dictionary containing the generated transaction id, actual logged amount, and recorded type.
     """
+    from sqlalchemy import select
+
+    from lira.db.models import Category, PaymentMethod
+
     with DatabaseSession() as session:
         account = session.query(Account).get(account_id)
         if not account:
             raise ValueError(f"Account {account_id} not found")
+
+        # Resolve category name to ID if provided
+        if category_name and not category_id:
+            cat = session.execute(
+                select(Category).where(Category.name == category_name)
+            ).scalar_one_or_none()
+            if cat:
+                category_id = cat.id
+            else:
+                raise ValueError(f"Category '{category_name}' not found")
+
+        # Resolve secondary category name to ID if provided
+        if secondary_category_name and not secondary_category_id:
+            cat = session.execute(
+                select(Category).where(Category.name == secondary_category_name)
+            ).scalar_one_or_none()
+            if cat:
+                secondary_category_id = cat.id
+
+        # Resolve payment method name to ID if provided
+        payment_method = None
+        if payment_method_name and not payment_method_id:
+            payment_method = session.execute(
+                select(PaymentMethod).where(PaymentMethod.name == payment_method_name)
+            ).scalar_one_or_none()
+            if payment_method:
+                payment_method_id = payment_method.id
+            else:
+                raise ValueError(f"Payment method '{payment_method_name}' not found")
+        elif payment_method_id:
+            payment_method = session.query(PaymentMethod).get(payment_method_id)
 
         tx_type = TransactionType(transaction_type)
         dec_amount = Decimal(str(amount))
@@ -138,13 +185,24 @@ async def create_transaction(
             transaction_type=tx_type,
             amount=dec_amount,
             description=description,
+            category_id=category_id,
+            secondary_category_id=secondary_category_id,
+            payment_method_id=payment_method_id,
             date=datetime.now(),
         )
 
+        # Update account balance
         if tx_type == TransactionType.EXPENSE:
             account.balance -= dec_amount
         elif tx_type == TransactionType.INCOME:
             account.balance += dec_amount
+
+        # Update payment method balance if linked
+        if payment_method:
+            if tx_type == TransactionType.EXPENSE:
+                payment_method.balance -= dec_amount
+            elif tx_type == TransactionType.INCOME:
+                payment_method.balance += dec_amount
 
         session.add(transaction)
         session.commit()
@@ -560,3 +618,264 @@ async def calculate_tax(
         "total_estimated_tax": float(short_term_tax + long_term_tax),
         "detailed": detailed,
     }
+
+
+@mcp.tool()
+async def set_currency(currency: str) -> dict[str, Any]:
+    """Set the user's base currency.
+
+    This should be called during first-run setup when the user provides their preferred currency.
+
+    Args:
+        currency: The currency code (e.g., "USD", "EUR", "GBP")
+
+    Returns:
+        Dictionary with success status and the set currency.
+    """
+    from lira.core.init import set_currency as set_currency_func
+
+    set_currency_func(currency.upper())
+    return {"success": True, "currency": currency.upper()}
+
+
+@mcp.tool()
+async def get_payment_methods() -> list[dict[str, Any]]:
+    """Get all available payment methods.
+
+    Returns:
+        A list of dictionaries containing payment method id, name, and is_default status.
+    """
+    from lira.core.init import get_payment_methods as get_pm_func
+
+    methods = get_pm_func()
+    return [
+        {
+            "id": pm.id,
+            "name": pm.name,
+            "is_default": pm.is_default,
+        }
+        for pm in methods
+    ]
+
+
+@mcp.tool()
+async def create_payment_method(
+    name: str, is_default: bool = False, balance: float = 0.0
+) -> dict[str, Any]:
+    """Create a new payment method.
+
+    Args:
+        name: The name of the payment method (e.g., "Cash", "Debit Card", "American Express").
+        is_default: Whether this should be the default payment method.
+        balance: Initial balance for this payment method (default 0).
+
+    Returns:
+        Dictionary with the created payment method id, name, and balance.
+    """
+    from lira.core.init import create_payment_method as create_pm_func
+
+    pm = create_pm_func(name, is_default=is_default, balance=balance)
+    return {
+        "id": pm.id,
+        "name": pm.name,
+        "balance": float(pm.balance),
+        "is_default": pm.is_default,
+    }
+
+
+@mcp.tool()
+async def get_categories() -> list[dict[str, Any]]:
+    """Get all available transaction categories with their hierarchy.
+
+    Returns:
+        A list of category dictionaries with id, name, and parent_id for hierarchy.
+    """
+    from lira.core.init import get_categories as get_cats_func
+
+    categories = get_cats_func()
+    return [
+        {
+            "id": cat.id,
+            "name": cat.name,
+            "parent_id": cat.parent_id,
+        }
+        for cat in categories
+    ]
+
+
+@mcp.tool()
+async def update_transactions(
+    category_id: int | None = None,
+    description_pattern: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Update multiple transactions in bulk based on filters.
+
+    This tool allows mass updates to transactions, useful for fixing categorization
+    or applying changes to historical data. Use dry_run=True first to preview changes.
+
+    Args:
+        category_id: New category_id to set for matching transactions.
+        description_pattern: SQL LIKE pattern to match against description (e.g., "%pizza%").
+        start_date: Start date filter in ISO format (YYYY-MM-DD).
+        end_date: End date filter in ISO format (YYYY-MM-DD).
+        dry_run: If True, only return matching transactions without applying changes.
+
+    Returns:
+        Dictionary with count of matched transactions and details.
+    """
+    from datetime import datetime
+
+    with DatabaseSession() as session:
+        query = session.query(Transaction)
+
+        if description_pattern:
+            query = query.filter(Transaction.description.like(description_pattern))
+
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            query = query.filter(Transaction.date >= start_dt)
+
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            query = query.filter(Transaction.date <= end_dt)
+
+        matching = query.all()
+
+        if dry_run:
+            return {
+                "matched_count": len(matching),
+                "dry_run": True,
+                "transactions": [
+                    {
+                        "id": t.id,
+                        "date": t.date.isoformat(),
+                        "description": t.description,
+                        "amount": float(t.amount),
+                        "category_id": t.category_id,
+                    }
+                    for t in matching[:100]
+                ],
+            }
+
+        if category_id is not None:
+            for t in matching:
+                t.category_id = category_id
+
+        return {
+            "updated_count": len(matching),
+            "dry_run": False,
+            "category_id": category_id,
+        }
+
+
+@mcp.tool()
+async def get_payment_method_balances() -> list[dict[str, Any]]:
+    """Get all payment methods with their balances.
+
+    Returns:
+        A list of dictionaries containing payment method id, name, and balance.
+    """
+    from lira.core.init import get_payment_methods as get_pm_func
+
+    methods = get_pm_func()
+    return [
+        {
+            "id": pm.id,
+            "name": pm.name,
+            "balance": float(pm.balance),
+            "is_default": pm.is_default,
+        }
+        for pm in methods
+    ]
+
+
+@mcp.tool()
+async def update_payment_method_balance(
+    payment_method_name: str, new_balance: float
+) -> dict[str, Any]:
+    """Set the balance of a payment method directly.
+
+    Use this when there's an inconsistency and you need to manually set the balance
+    (e.g., "set my Cash balance to $450").
+
+    Args:
+        payment_method_name: The name of the payment method (use get_payment_methods to see available names).
+        new_balance: The new balance value to set.
+
+    Returns:
+        Dictionary with success status, payment method name, old balance, and new balance.
+    """
+    from lira.core.init import update_payment_method_balance as update_balance_func
+
+    return update_balance_func(payment_method_name, new_balance)
+
+
+@mcp.tool()
+async def transfer_between_payment_methods(
+    from_method: str, to_method: str, amount: float
+) -> dict[str, Any]:
+    """Transfer money between payment methods.
+
+    Use this when the user says things like "I moved $50 from Cash to Debit Card".
+
+    Args:
+        from_method: Source payment method name (use get_payment_methods to see available names).
+        to_method: Destination payment method name.
+        amount: Amount to transfer.
+
+    Returns:
+        Dictionary with success status, transfer details, and new balances.
+    """
+    from lira.core.init import transfer_between_payment_methods as transfer_func
+
+    return transfer_func(from_method, to_method, amount)
+
+
+@mcp.tool()
+async def record_gain_loss(payment_method_name: str, amount: float) -> dict[str, Any]:
+    """Record a gain or loss for a payment method.
+
+    Use this when the user says things like "I gained $500 in my Cash account"
+    or "I lost $100 from my Debit Card".
+
+    Args:
+        payment_method_name: The name of the payment method.
+        amount: Positive for gain, negative for loss.
+
+    Returns:
+        Dictionary with success status, amount, old balance, and new balance.
+    """
+    from lira.core.init import gain_loss_payment_method as gain_loss_func
+
+    return gain_loss_func(payment_method_name, amount)
+
+
+@mcp.tool()
+async def create_persistent_plot(
+    name: str,
+    plot_type: str = "bar",
+    title: str = "",
+    x_key: str = "x",
+    y_key: str = "y",
+) -> dict[str, Any]:
+    """Create a persistent plot on the dashboard.
+
+    Use this when the user says "add to my dashboard a persistent plot about..."
+    The plot will be saved to the database and shown on the dashboard.
+
+    Args:
+        name: Name/title for the plot.
+        plot_type: Type of plot ('bar', 'line', 'pie', 'scatter').
+        title: Display title for the plot.
+        x_key: Key to use for x-axis values.
+        y_key: Key to use for y-axis values.
+
+    Returns:
+        Dictionary with success status and plot details.
+    """
+    from lira.core.init import create_persistent_plot as create_plot_func
+
+    return create_plot_func(name, plot_type, title, x_key, y_key)

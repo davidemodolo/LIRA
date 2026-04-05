@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from lira.core.config import settings
+from lira.core.init import check_initialization_needed, get_category_tree, get_currency
 from lira.core.llm import LLMProvider, get_llm_provider
 from lira.db.session import init_database
 from lira.mcp.server import mcp
@@ -96,6 +97,18 @@ class Agent:
         self._state = AgentState.IDLE
         self._history: list[dict[str, Any]] = []
         self._tools_schema = self._build_tools_schema()
+        self._init_status = check_initialization_needed()
+        self._category_tree = get_category_tree()
+        self._currency = get_currency()
+
+    @property
+    def initialization_needed(self) -> dict[str, bool]:
+        """Check what needs to be initialized."""
+        return {
+            "currency": self._init_status["currency_needed"],
+            "payment_methods": self._init_status["payment_methods_needed"],
+            "categories": self._init_status["categories_needed"],
+        }
 
     @property
     def state(self) -> str:
@@ -183,16 +196,57 @@ class Agent:
         self._state = AgentState.REASONING
 
         today = datetime.now(timezone.utc).date().isoformat()
+
+        init_msgs: list[str] = []
+        if self._init_status["currency_needed"]:
+            init_msgs.append("Ask the user for their base currency (e.g., USD, EUR, GBP)")
+        if self._init_status["payment_methods_needed"]:
+            init_msgs.append(
+                "Ask the user for their payment methods with their starting balances (e.g., 'Cash: 100, Revolut: 500, BBVA: 200')"
+            )
+        if self._init_status["categories_needed"]:
+            init_msgs.append(
+                "Ask the user for their category hierarchy. Prompt with: 'Please provide your expense categories. For each main category, list the subcategories. Example: FOOD (restaurant, groceries), TRANSPORT (gas, bus), etc.'"
+            )
+
+        init_context = ""
+        if init_msgs:
+            init_context = (
+                "\n[SETUP REQUIRED] The first time running, please:\n- "
+                + "\n- ".join(init_msgs)
+                + "\nUse set_currency, create_payment_method (with balance), and get_categories tools as needed.\n"
+            )
+
+        category_info = ""
+        if self._category_tree:
+            cat_lines = []
+            for parent, data in self._category_tree.items():
+                subs = [s["name"] for s in data.get("subcategories", [])]
+                if subs:
+                    cat_lines.append(f"  {parent}: {', '.join(subs)}")
+                else:
+                    cat_lines.append(f"  {parent}")
+            category_info = "\n[AVAILABLE CATEGORIES]\n" + "\n".join(cat_lines) + "\n"
+
         system_prompt = f"""You are L.I.R.A., an AI assistant for personal finance management.
 
 Current date: {today}
-
+Base currency: {self._currency}
+{init_context}{category_info}
 Your capabilities:
 - list_accounts: List all accounts with their balances
 - create_account: Create a new financial account
-- create_transaction: Record income or expenses
+- create_transaction: Record income or expenses (supports primary and secondary categories)
 - get_transactions: View recent transactions
 - generate_plot: Create visualizations (bar, line, pie, scatter charts)
+- set_currency: Set user's base currency
+- create_payment_method: Add a payment method with balance
+- get_payment_method_balances: View all payment methods with balances
+- transfer_between_payment_methods: Transfer money between payment methods
+- update_payment_method_balance: Set balance directly (for corrections)
+- record_gain_loss: Record a gain or loss for a payment method
+- create_persistent_plot: Add a persistent plot to the dashboard
+- get_categories: View available categories
 
 Available tools:
 {self._tools_schema}
@@ -201,10 +255,12 @@ Instructions:
 1. Parse the user's natural language request
 2. If the user wants to see data, call the appropriate tool(s)
 3. If creating a transaction, FIRST use list_accounts to find the correct account_id for the given account name.
-4. If the user wants a chart or visualization, use generate_plot
-5. Return results in a friendly format
-6. If creating data, confirm with user first
+4. Transactions can have primary and secondary categories for better organization (e.g., primary=FOOD, secondary=groceries)
+5. If the user wants a chart or visualization, use generate_plot
+6. Return results in a friendly format
+7. If creating data, confirm with user first
 7. Tool argument names must match the schema exactly (e.g. use transaction_type, not type)
+8. When adding expenses, use the category system. Categories are hierarchical like FOOD -> bar-restaurant, groceries
 
 IMPORTANT: When calling tools, respond ONLY with JSON like:
 {{"tool_calls": [{{"name": "tool_name", "arguments": {{"arg1": "value1"}}}}]}}

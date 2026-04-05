@@ -52,6 +52,50 @@ class TransactionType(str, enum.Enum):
     INTEREST = "interest"
 
 
+class Settings(Base):
+    """User settings model.
+
+    Stores user preferences like currency, display settings, etc.
+    """
+
+    __tablename__ = "settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    value: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class PaymentMethod(Base):
+    """Payment method model.
+
+    Stores user-defined payment methods (Cash, Debit Card, Credit Card, etc.).
+    Also tracks the balance associated with each method for net worth calculation.
+
+    Can optionally be linked to an Account (e.g., Debit Card linked to Checking account).
+    """
+
+    __tablename__ = "payment_methods"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    balance: Mapped[Decimal] = mapped_column(Numeric(19, 4), default=Decimal("0"))
+    account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id"), nullable=True
+    )
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    account: Mapped[Account | None] = relationship("Account", back_populates="payment_methods")
+    transactions: Mapped[list[Transaction]] = relationship(
+        "Transaction", back_populates="payment_method"
+    )
+
+    __table_args__ = (Index("ix_payment_methods_name", "name"),)
+
+
 class AccountType(str, enum.Enum):
     """Types of accounts."""
 
@@ -94,6 +138,9 @@ class Account(Base):
         back_populates="account",
         cascade="all, delete-orphan",
     )
+    payment_methods: Mapped[list[PaymentMethod]] = relationship(
+        "PaymentMethod", back_populates="account"
+    )
 
     __table_args__ = (
         Index("ix_accounts_type_active", "account_type", "is_active"),
@@ -123,7 +170,6 @@ class Category(Base):
         "Category", remote_side=[id], back_populates="children"
     )
     children: Mapped[list[Category]] = relationship("Category", back_populates="parent")
-    transactions: Mapped[list[Transaction]] = relationship("Transaction", back_populates="category")
 
     __table_args__ = (Index("ix_categories_name", "name"),)
 
@@ -141,6 +187,12 @@ class Transaction(Base):
     category_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("categories.id"), nullable=True
     )
+    secondary_category_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("categories.id"), nullable=True
+    )
+    payment_method_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("payment_methods.id"), nullable=True
+    )
     transaction_type: Mapped[TransactionType] = mapped_column(Enum(TransactionType), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
@@ -157,7 +209,13 @@ class Transaction(Base):
     )
 
     account: Mapped[Account] = relationship("Account", back_populates="transactions")
-    category: Mapped[Category | None] = relationship("Category", back_populates="transactions")
+    category: Mapped[Category | None] = relationship("Category", foreign_keys=[category_id])
+    secondary_category: Mapped[Category | None] = relationship(
+        "Category", foreign_keys=[secondary_category_id]
+    )
+    payment_method: Mapped[PaymentMethod | None] = relationship(
+        "PaymentMethod", back_populates="transactions"
+    )
 
     __table_args__ = (
         Index("ix_transactions_date_type", "date", "transaction_type"),
@@ -314,6 +372,24 @@ class LotSale(Base):
     )
 
 
+class DashboardPlot(Base):
+    """Persistent dashboard plot configuration.
+
+    Stores plots that users want to persist on their dashboard.
+    """
+
+    __tablename__ = "dashboard_plots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    plot_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    x_key: Mapped[str] = mapped_column(String(50), nullable=False)
+    y_key: Mapped[str] = mapped_column(String(50), nullable=False)
+    config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 # Pydantic schemas for API serialization
 class AccountSchema(BaseModel):
     """Pydantic schema for Account."""
@@ -337,6 +413,7 @@ class TransactionSchema(BaseModel):
     id: int
     account_id: int
     category_id: int | None = None
+    payment_method_id: int | None = None
     transaction_type: TransactionType
     amount: Decimal
     currency: str
@@ -344,6 +421,17 @@ class TransactionSchema(BaseModel):
     merchant: str | None = None
     date: datetime
     is_reconciled: bool = False
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PaymentMethodSchema(BaseModel):
+    """Pydantic schema for PaymentMethod."""
+
+    id: int
+    name: str
+    is_default: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

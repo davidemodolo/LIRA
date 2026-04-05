@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from lira.core.agent import Agent, AgentConfig
@@ -22,6 +22,9 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterator
 
     from sqlalchemy.orm import Session
+
+from lira.api.routes import dashboard as dashboard_routes
+from lira.api.routes import plots as plots_routes
 
 logger = logging.getLogger(__name__)
 
@@ -67,17 +70,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Connect FastMCP to FastAPI app
+app.include_router(dashboard_routes.router)
+app.include_router(plots_routes.router)
+
+
+@app.get("/dashboard", tags=["web"])
+async def serve_dashboard() -> FileResponse:
+    """Serve the dashboard web UI."""
+    import os
+
+    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return FileResponse(os.path.join(base_path, "web", "templates", "dashboard.html"))
 
 
 @app.get("/", tags=["system"])
 async def root() -> dict[str, str]:
-    """Root endpoint."""
+    """Root endpoint - redirect to dashboard."""
     return {
         "name": "L.I.R.A. API",
         "version": __version__,
         "status": "online",
         "agentic": "true",
+        "dashboard": "/dashboard",
     }
 
 
@@ -94,6 +108,11 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
         raise HTTPException(status_code=400, detail="Messages list cannot be empty")
 
     prompt = request.messages[-1].content
+    history = (
+        [{"role": m.role, "content": m.content} for m in request.messages[:-1]]
+        if len(request.messages) > 1
+        else None
+    )
     agent = Agent(AgentConfig())
 
     try:
@@ -103,16 +122,29 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
                 import json
                 from dataclasses import asdict
 
-                async for event in agent.run_stream(prompt):
+                async for event in agent.run_stream(prompt, history):
                     yield json.dumps(asdict(event)) + "\n"
 
             return StreamingResponse(generate(), media_type="application/x-ndjson")
 
-        result = await agent.run(prompt)
+        trace_events: list[dict[str, Any]] = []
+
+        async for event in agent.run_stream(prompt, history):
+            if event.kind in {"status", "tool_call", "tool_result", "llm_token"}:
+                trace_events.append(
+                    {
+                        "kind": event.kind,
+                        "content": event.content,
+                        "payload": event.payload,
+                    }
+                )
+
+        result = await agent.run(prompt, history)
+
         return AgentChatResponse(
-            message=ChatMessage(role="assistant", content=result),
-            final_state=agent.state,
-            usage={},
+            message=ChatMessage(role="assistant", content=result.message),
+            final_state=result.state,
+            usage={"iterations": result.iterations, "trace": trace_events},
         )
     except Exception as e:
         logger.exception("Agent run failed")
