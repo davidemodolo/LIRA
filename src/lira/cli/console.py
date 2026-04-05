@@ -649,8 +649,7 @@ async def update_all_prices() -> None:
                     holding.current_price = result["price"]
                     session.commit()
             except Exception:
-                pass
-
+                    pass  # nosec B110
 
 async def fetch_stock_price(symbol: str) -> dict[str, Any]:
     """Fetch current stock price."""

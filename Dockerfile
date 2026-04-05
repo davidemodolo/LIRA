@@ -32,7 +32,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-CMD ["python", "-m", "lira"]
+CMD ["uv", "run", "lira"]
 
 # ==============================================================================
 # Stage 3: Runtime
@@ -61,6 +61,6 @@ USER lira
 EXPOSE 8000 8001
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import lira; print('ok')" || exit 1
+    CMD uv run python -c "import lira; print('ok')" || exit 1
 
-CMD ["uvicorn", "lira.api.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uv", "run", "uvicorn", "lira.api.main:app", "--host", "0.0.0.0", "--port", "8001"]

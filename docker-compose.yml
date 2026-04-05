@@ -20,7 +20,7 @@ services:
       - LOG_LEVEL=DEBUG
     depends_on:
       - ollama
-    command: uvicorn lira.api.main:app --host 0.0.0.0 --port 8001 --reload
+    command: uv run lira-api --host 0.0.0.0 --port 8001 --reload
 
   # L.I.R.A. CLI (interactive mode)
   cli:
@@ -39,7 +39,7 @@ services:
       - ollama
     stdin_open: true
     tty: true
-    command: python -m lira
+    command: uv run lira
 
   # Local LLM (Ollama) - GPU Support
   ollama:
