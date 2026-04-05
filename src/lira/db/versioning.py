@@ -24,7 +24,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
     """Base class for version events."""
-    pass
+
 
 logger = logging.getLogger(__name__)
 

@@ -107,15 +107,22 @@ async def process_query(query: str) -> dict[str, Any]:
         Agent response
     """
     from lira.core.agent import Agent, AgentConfig
+    from lira.db.session import init_database
 
-    config = AgentConfig(enable_self_correction=True)
+    init_database()
+
+    config = AgentConfig(
+        model="gemma4:31b",
+        enable_self_correction=True,
+        temperature=0.7,
+    )
     agent = Agent(config=config)
 
     response = await agent.run(query)
 
     return {
         "message": response.message,
-        "state": response.state.value,
+        "state": response.state,
         "iterations": response.iterations,
         "data": response.data,
         "error": response.error,
@@ -133,7 +140,12 @@ def display_response(response: dict[str, Any]) -> None:
         return
 
     console.print("\n[green bold]L.I.R.A.[/green bold]")
-    console.print(Markdown(response["message"]))
+
+    message = response["message"]
+    if message:
+        console.print(Markdown(message))
+    else:
+        console.print("[dim]No response[/dim]")
 
     if response.get("data"):
         console.print("\n[dim]Additional data:[/dim]")

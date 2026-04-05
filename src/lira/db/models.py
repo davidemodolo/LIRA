@@ -222,10 +222,9 @@ class Holding(Base):
     lots: Mapped[list[Lot]] = relationship(
         "Lot", back_populates="holding", cascade="all, delete-orphan"
     )
+    trades: Mapped[list[Trade]] = relationship("Trade", back_populates="holding")
 
-    __table_args__ = (
-        UniqueConstraint("portfolio_id", "symbol", name="uq_portfolio_symbol"),
-    )
+    __table_args__ = (UniqueConstraint("portfolio_id", "symbol", name="uq_portfolio_symbol"),)
 
 
 class Trade(Base):
@@ -253,7 +252,7 @@ class Trade(Base):
 
     portfolio: Mapped[Portfolio] = relationship("Portfolio", back_populates="trades")
     holding: Mapped[Holding | None] = relationship("Holding", back_populates="trades")
-    lot: Mapped[Lot | None] = relationship("Lot", back_populates="trade")
+    lot: Mapped[Lot | None] = relationship("Lot", back_populates="trade", uselist=False)
 
     __table_args__ = (
         Index("ix_trades_symbol_date", "symbol", "date"),

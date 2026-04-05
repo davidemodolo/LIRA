@@ -7,21 +7,17 @@ with self-correction capabilities for SQL errors and edge cases.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any
 
-from pydantic import Field
-
-from lira.core.tools import ToolRegistry, ToolResult
-
-if TYPE_CHECKING:
-    from lira.core.tools import Tool
+from lira.core.llm import OllamaProvider, get_ollama_provider
+from lira.core.tools import Tool, ToolRegistry, ToolResult
 
 logger = logging.getLogger(__name__)
 
 
-class AgentState(str, Enum):
+class AgentState:
     """Agent execution states."""
 
     IDLE = "idle"
@@ -36,61 +32,24 @@ class AgentState(str, Enum):
 class AgentConfig:
     """Configuration for the L.I.R.A. agent."""
 
-    model: str = Field(default="gpt-4", description="LLM model to use")
-    max_iterations: int = Field(default=10, description="Max ReAct loop iterations")
-    temperature: float = Field(default=0.7, description="LLM temperature")
-    timeout: int = Field(default=30, description="Tool execution timeout (seconds)")
-    enable_self_correction: bool = Field(
-        default=True, description="Enable automatic self-correction"
-    )
-    system_prompt: str | None = Field(default=None, description="Custom system prompt")
-
-    @property
-    def default_system_prompt(self) -> str:
-        """Default system prompt for the agent."""
-        return """You are L.I.R.A., an AI assistant for personal finance management.
-
-Your capabilities:
-- Execute SQL queries to fetch and modify financial data
-- Fetch real-time stock quotes and financial data
-- Generate visualizations and analytics
-- Calculate portfolio metrics and tax implications
-
-Always:
-- Validate user input before processing
-- Explain your reasoning before taking actions
-- Confirm destructive operations with the user
-- Prioritize data safety and security
-
-When executing SQL:
-- Use parameterized queries to prevent SQL injection
-- Show the user what data will be affected
-- Handle empty results gracefully
-"""
+    model: str = "gemma4:31b"
+    max_iterations: int = 10
+    temperature: float = 0.7
+    timeout: int = 120
+    enable_self_correction: bool = True
+    ollama_base_url: str = "http://localhost:11434"
 
 
 @dataclass
 class AgentResponse:
     """Response from agent execution."""
 
-    state: AgentState
+    state: str
     message: str
     data: dict[str, Any] | None = None
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     iterations: int = 0
-
-
-class LLMProvider(Protocol):
-    """Protocol for LLM providers."""
-
-    def complete(self, prompt: str, **kwargs: Any) -> str:
-        """Generate a completion."""
-        ...
-
-    async def acomplete(self, prompt: str, **kwargs: Any) -> str:
-        """Generate an async completion."""
-        ...
 
 
 class Agent:
@@ -108,195 +67,374 @@ class Agent:
         self,
         config: AgentConfig | None = None,
         tool_registry: ToolRegistry | None = None,
-        llm_provider: LLMProvider | None = None,
+        llm_provider: OllamaProvider | None = None,
     ) -> None:
         self.config = config or AgentConfig()
-        self.tool_registry = tool_registry
-        self.llm_provider = llm_provider
+        self.tool_registry = tool_registry or self._create_default_registry()
+        self.llm_provider = llm_provider or get_ollama_provider(
+            base_url=self.config.ollama_base_url,
+            model=self.config.model,
+        )
         self._state = AgentState.IDLE
         self._history: list[dict[str, Any]] = []
+        self._tools_schema = self._build_tools_schema()
 
-    @property
-    def state(self) -> AgentState:
-        """Current agent state."""
-        return self._state
+    def _create_default_registry(self) -> ToolRegistry:
+        """Create default tool registry with CRUD operations."""
+        from decimal import Decimal
+
+        from lira.db.repositories import (
+            AccountRepository,
+            TransactionRepository,
+        )
+        from lira.db.session import DatabaseSession
+
+        registry = ToolRegistry()
+
+        class ListAccountsTool(Tool):
+            name = "list_accounts"
+            description = "List all accounts. Returns account details including balance."
+
+            async def execute(self, **kwargs: Any) -> ToolResult:
+                try:
+                    with DatabaseSession() as session:
+                        repo = AccountRepository(session)
+                        accounts = repo.get_all()
+                        return ToolResult(
+                            success=True,
+                            data=[
+                                {
+                                    "id": a.id,
+                                    "name": a.name,
+                                    "type": a.account_type.value,
+                                    "balance": float(a.balance),
+                                    "currency": a.currency,
+                                }
+                                for a in accounts
+                            ],
+                        )
+                except Exception as e:
+                    return ToolResult(success=False, error=str(e))
+
+            def get_schema(self) -> dict[str, Any]:
+                return {"type": "object", "properties": {}, "required": []}
+
+        class CreateTransactionTool(Tool):
+            name = "create_transaction"
+            description = "Create a new transaction (income or expense)"
+
+            async def execute(
+                self,
+                account_id: int,
+                amount: float,
+                transaction_type: str,
+                description: str = "",
+                **kwargs: Any,
+            ) -> ToolResult:
+                try:
+                    with DatabaseSession() as session:
+                        repo = TransactionRepository(session)
+                        t = repo.create(
+                            account_id=account_id,
+                            transaction_type=transaction_type,
+                            amount=Decimal(str(amount)),
+                            description=description,
+                        )
+                        return ToolResult(
+                            success=True,
+                            data={
+                                "id": t.id,
+                                "amount": float(t.amount),
+                                "type": t.transaction_type.value,
+                            },
+                        )
+                except Exception as e:
+                    return ToolResult(success=False, error=str(e))
+
+            def get_schema(self) -> dict[str, Any]:
+                return {
+                    "type": "object",
+                    "properties": {
+                        "account_id": {"type": "integer", "description": "Account ID"},
+                        "amount": {"type": "number", "description": "Transaction amount"},
+                        "transaction_type": {
+                            "type": "string",
+                            "enum": ["income", "expense"],
+                            "description": "Type of transaction",
+                        },
+                        "description": {"type": "string", "description": "Description"},
+                    },
+                    "required": ["account_id", "amount", "transaction_type"],
+                }
+
+        class GetTransactionsTool(Tool):
+            name = "get_transactions"
+            description = "Get recent transactions"
+
+            async def execute(
+                self, account_id: int | None = None, limit: int = 10, **kwargs: Any
+            ) -> ToolResult:
+                try:
+                    with DatabaseSession() as session:
+                        repo = TransactionRepository(session)
+                        transactions = repo.get_all(account_id=account_id, limit=limit)
+                        return ToolResult(
+                            success=True,
+                            data=[
+                                {
+                                    "id": t.id,
+                                    "date": t.date.isoformat(),
+                                    "amount": float(t.amount),
+                                    "type": t.transaction_type.value,
+                                    "description": t.description,
+                                }
+                                for t in transactions
+                            ],
+                        )
+                except Exception as e:
+                    return ToolResult(success=False, error=str(e))
+
+            def get_schema(self) -> dict[str, Any]:
+                return {
+                    "type": "object",
+                    "properties": {
+                        "account_id": {"type": "integer", "description": "Account ID (optional)"},
+                        "limit": {
+                            "type": "integer",
+                            "default": 10,
+                            "description": "Max transactions to return",
+                        },
+                    },
+                    "required": [],
+                }
+
+        class CreateAccountTool(Tool):
+            name = "create_account"
+            description = "Create a new account"
+
+            async def execute(
+                self, name: str, account_type: str = "checking", balance: float = 0.0, **kwargs: Any
+            ) -> ToolResult:
+                try:
+                    with DatabaseSession() as session:
+                        repo = AccountRepository(session)
+                        a = repo.create(
+                            name=name, account_type=account_type, balance=Decimal(str(balance))
+                        )
+                        return ToolResult(
+                            success=True,
+                            data={"id": a.id, "name": a.name, "balance": float(a.balance)},
+                        )
+                except Exception as e:
+                    return ToolResult(success=False, error=str(e))
+
+            def get_schema(self) -> dict[str, Any]:
+                return {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Account name"},
+                        "account_type": {
+                            "type": "string",
+                            "enum": ["checking", "savings", "credit_card", "investment"],
+                            "default": "checking",
+                        },
+                        "balance": {
+                            "type": "number",
+                            "default": 0.0,
+                            "description": "Initial balance",
+                        },
+                    },
+                    "required": ["name"],
+                }
+
+        registry.register(ListAccountsTool())
+        registry.register(CreateTransactionTool())
+        registry.register(GetTransactionsTool())
+        registry.register(CreateAccountTool())
+
+        return registry
+
+    def _build_tools_schema(self) -> str:
+        """Build tools description for system prompt."""
+        tools_desc = []
+        for tool in self.tool_registry._tools.values():
+            schema = tool.get_schema()
+            tools_desc.append(f"- {tool.name}: {tool.description}")
+
+        return "\n".join(tools_desc)
+
+    async def run(self, user_input: str) -> AgentResponse:
+        """Run the agent with user input."""
+        self._state = AgentState.REASONING
+        system_prompt = f"""You are L.I.R.A., an AI assistant for personal finance management.
+
+Your capabilities:
+- list_accounts: List all accounts with their balances
+- create_account: Create a new financial account
+- create_transaction: Record income or expenses
+- get_transactions: View recent transactions
+
+Available tools:
+{self._tools_schema}
+
+Instructions:
+1. Parse the user's natural language request
+2. If the user wants to see data, call the appropriate tool(s)
+3. Return results in a friendly format
+4. If creating data, confirm with user first
+
+IMPORTANT: When calling tools, respond ONLY with JSON like:
+{{"tool_calls": [{{"name": "tool_name", "arguments": {{"arg1": "value1"}}}}]}}
+
+If no tools needed, respond with plain text."""
+
+        conversation = f"""System: {system_prompt}
+
+User: {user_input}
+
+Respond with JSON tool call or plain text:"""
+
+        try:
+            response_text = await self.llm_provider.acomplete(
+                conversation, temperature=self.config.temperature
+            )
+
+            response_text = self._clean_response(response_text)
+
+            tool_result = self._parse_and_execute(response_text)
+
+            if tool_result:
+                return AgentResponse(
+                    state=AgentState.COMPLETE,
+                    message=tool_result,
+                    iterations=1,
+                )
+
+            self._state = AgentState.COMPLETE
+
+            return AgentResponse(
+                state=AgentState.COMPLETE,
+                message=response_text or "I didn't understand that. Can you rephrase?",
+                iterations=1,
+            )
+
+        except Exception as e:
+            logger.exception("Agent error")
+            self._state = AgentState.ERROR
+            return AgentResponse(
+                state=AgentState.ERROR,
+                message=f"I encountered an error: {e!s}",
+                error=str(e),
+            )
+
+    def _parse_and_execute(self, response_text: str) -> str | None:
+        """Parse JSON tool calls and execute them (sync wrapper)."""
+        try:
+            if "{" not in response_text:
+                return None
+
+            import json
+
+            data = json.loads(response_text)
+
+            if "tool_calls" in data:
+                results = []
+                for call in data["tool_calls"]:
+                    tool_name = call.get("name")
+                    arguments = call.get("arguments", {})
+
+                    tool = self.tool_registry.get(tool_name)
+                    if tool:
+                        result = self._execute_tool_sync(tool, arguments)
+                        if result.success:
+                            results.append(result.data)
+                        else:
+                            results.append(f"Error: {result.error}")
+                    else:
+                        results.append(f"Unknown tool: {tool_name}")
+
+                if results:
+                    return self._format_results(results)
+                return None
+
+        except json.JSONDecodeError:
+            pass
+
+        return None
+
+    def _execute_tool_sync(self, tool: Tool, arguments: dict[str, Any]) -> ToolResult:
+        """Execute a tool synchronously."""
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, tool.execute(**arguments))
+                return future.result()
+        except RuntimeError:
+            return asyncio.run(tool.execute(**arguments))
+
+            import json
+
+            data = json.loads(response_text)
+
+            if "tool_calls" in data:
+                results = []
+                for call in data["tool_calls"]:
+                    tool_name = call.get("name")
+                    arguments = call.get("arguments", {})
+
+                    tool = self.tool_registry.get(tool_name)
+                    if tool:
+                        import asyncio
+
+                        result = asyncio.run(tool.execute(**arguments))
+                        if result.success:
+                            results.append(result.data)
+                        else:
+                            results.append(f"Error: {result.error}")
+                    else:
+                        results.append(f"Unknown tool: {tool_name}")
+
+                if results:
+                    return self._format_results(results)
+                return None
+
+        except json.JSONDecodeError:
+            pass
+
+        return None
+
+    def _format_results(self, results: list[Any]) -> str:
+        """Format tool results for display."""
+        if not results:
+            return "No results found."
+
+        formatted = []
+        for result in results:
+            if isinstance(result, list):
+                for item in result:
+                    formatted.append(f"- {item}")
+            elif isinstance(result, dict):
+                parts = [f"{k}: {v}" for k, v in result.items()]
+                formatted.append(", ".join(parts))
+            else:
+                formatted.append(str(result))
+
+        return "\n".join(formatted) if formatted else "Done."
+
+    def _clean_response(self, response: str) -> str:
+        """Clean up the LLM response."""
+        response = response.strip()
+
+        response = re.sub(r"^```[\w]*\n?", "", response)
+        response = re.sub(r"\n?```$", "", response)
+
+        return response
 
     def reset(self) -> None:
         """Reset agent state and history."""
         self._state = AgentState.IDLE
         self._history.clear()
-
-    def register_tool(self, tool: Tool) -> None:
-        """Register a tool with the agent."""
-        if self.tool_registry is None:
-            from lira.core.tools import ToolRegistry
-
-            self.tool_registry = ToolRegistry()
-        self.tool_registry.register(tool)
-
-    async def run(self, user_input: str) -> AgentResponse:
-        """Run the agent with user input.
-
-        Args:
-            user_input: Natural language request from user
-
-        Returns:
-            AgentResponse with results and state
-        """
-        self.reset()
-        self._state = AgentState.REASONING
-
-        iterations = 0
-        max_iterations = self.config.max_iterations
-
-        while iterations < max_iterations:
-            iterations += 1
-
-            try:
-                if self._state == AgentState.REASONING:
-                    plan = await self._reason(user_input)
-                    if plan["action"] == "respond":
-                        self._state = AgentState.COMPLETE
-                        return AgentResponse(
-                            state=AgentState.COMPLETE,
-                            message=plan["message"],
-                            data=plan.get("data"),
-                            iterations=iterations,
-                        )
-                    if plan["action"] == "tool":
-                        self._state = AgentState.ACTING
-
-                elif self._state == AgentState.ACTING:
-                    plan = getattr(self, "_current_plan", None)
-                    if not plan:
-                        self._state = AgentState.ERROR
-                        return AgentResponse(
-                            state=AgentState.ERROR,
-                            message="No plan available for action",
-                            iterations=iterations,
-                        )
-                    result = await self._act(plan["tool"], plan["args"])
-                    self._history.append({"role": "tool", "tool": plan["tool"], "result": result})
-
-                    if result.error:
-                        if self.config.enable_self_correction:
-                            user_input = self._construct_correction_prompt(
-                                result.error, plan["tool"]
-                            )
-                            self._state = AgentState.REASONING
-                        else:
-                            self._state = AgentState.ERROR
-                            return AgentResponse(
-                                state=AgentState.ERROR,
-                                message=f"Tool execution failed: {result.error}",
-                                error=result.error,
-                                iterations=iterations,
-                            )
-                    else:
-                        self._state = AgentState.REASONING
-                        user_input = f"Continue analysis with this result: {result.data}"
-                        self._current_plan = plan if plan["action"] == "tool" else None
-
-            except Exception as e:
-                logger.exception("Agent error during iteration %d", iterations)
-                self._state = AgentState.ERROR
-                return AgentResponse(
-                    state=AgentState.ERROR,
-                    message=str(e),
-                    error=str(e),
-                    iterations=iterations,
-                )
-
-        return AgentResponse(
-            state=AgentState.COMPLETE,
-            message="Max iterations reached",
-            iterations=iterations,
-        )
-
-    async def _reason(self, user_input: str) -> dict[str, Any]:
-        """Reason about the next action to take.
-
-        This is a placeholder for LLM-powered reasoning.
-        """
-        if self.llm_provider:
-            prompt = self._build_reasoning_prompt(user_input)
-            response = await self.llm_provider.acomplete(prompt)
-            return self._parse_llm_response(response)
-
-        return {
-            "action": "respond",
-            "message": "Agent reasoning not implemented. Provide LLM provider.",
-        }
-
-    def _build_reasoning_prompt(self, user_input: str) -> str:
-        """Build prompt for reasoning."""
-        system = self.config.system_prompt or self.config.default_system_prompt
-        tools = self.tool_registry.list_tools() if self.tool_registry else []
-        history = "\n".join(
-            f"- {h['role']}: {h.get('tool', 'N/A')} -> {h.get('result', {}).get('data', 'N/A')}"
-            for h in self._history[-3:]
-        )
-
-        return f"""{system}
-
-Available tools:
-{chr(10).join(f"- {t}" for t in tools)}
-
-Recent history:
-{history}
-
-User request: {user_input}
-
-What should I do? Respond with:
-1. action: "tool" or "respond"
-2. If tool: tool_name and arguments
-3. If respond: message and optional data
-"""
-
-    def _parse_llm_response(self, response: str) -> dict[str, Any]:
-        """Parse LLM response into action plan."""
-        return {
-            "action": "respond",
-            "message": response,
-        }
-
-    async def _act(self, tool_name: str, args: dict[str, Any]) -> ToolResult:
-        """Execute a tool action."""
-        if not self.tool_registry:
-            return ToolResult(
-                success=False,
-                error="No tools registered",
-            )
-
-        tool = self.tool_registry.get(tool_name)
-        if not tool:
-            return ToolResult(
-                success=False,
-                error=f"Unknown tool: {tool_name}",
-            )
-
-        return await tool.execute(**args)
-
-    def _construct_correction_prompt(self, error: str, failed_tool: str) -> str:
-        """Construct a prompt for self-correction after error."""
-        return f"""Previous tool '{failed_tool}' failed with error:
-{error}
-
-Please analyze the error and suggest a corrected approach.
-Consider:
-1. What went wrong?
-2. How can we fix the input/parameters?
-3. Should we try a different tool or approach?
-
-Provide corrected tool call or respond directly to the user.
-"""
-
-
-class DummyLLMProvider:
-    """Dummy LLM provider for testing."""
-
-    async def acomplete(self, prompt: str, **kwargs: Any) -> str:
-        return "I need more context to complete this request."
-
-    def complete(self, prompt: str, **kwargs: Any) -> str:
-        return "I need more context to complete this request."
