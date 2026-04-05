@@ -102,6 +102,7 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
             async def generate() -> AsyncGenerator[str, None]:
                 import json
                 from dataclasses import asdict
+
                 async for event in agent.run_stream(prompt):
                     yield json.dumps(asdict(event)) + "\n"
 
