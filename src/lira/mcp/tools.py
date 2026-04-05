@@ -14,6 +14,8 @@ from decimal import Decimal
 from typing import Any
 
 import yfinance as yf
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +27,10 @@ from lira.db.models import (
     Transaction,
     TransactionType,
 )
-from lira.db.session import DatabaseSession
+from lira.db.session import DatabaseSession, init_database
 from lira.mcp.server import mcp
+
+init_database()
 
 try:
     import matplotlib
@@ -103,12 +107,56 @@ async def create_account(
         }
 
 
+def _resolve_category_name(session: Session, name: str) -> int | None:
+    """Resolve a category name (including hierarchical) to its ID.
+
+    Supports formats:
+    - "FOOD" (exact match)
+    - "food" (case-insensitive)
+    - "FOOD > groceries" or "FOOD > bar-restaurant" (hierarchical)
+
+    Args:
+        session: Database session
+        name: Category name to resolve
+
+    Returns:
+        Category ID if found, None otherwise
+    """
+    name_lower = name.lower().strip()
+
+    exact_match = session.execute(
+        select(Category).where(func.lower(Category.name) == name_lower)
+    ).scalar_one_or_none()
+    if exact_match:
+        return exact_match.id
+
+    if " > " in name:
+        parts = name.split(" > ")
+        if len(parts) == 2:
+            parent_name, child_name = parts[0].strip(), parts[1].strip()
+            parent = session.execute(
+                select(Category).where(func.lower(Category.name) == parent_name.lower())
+            ).scalar_one_or_none()
+            if parent:
+                child = session.execute(
+                    select(Category).where(
+                        func.lower(Category.name) == child_name.lower(),
+                        Category.parent_id == parent.id,
+                    )
+                ).scalar_one_or_none()
+                if child:
+                    return child.id
+
+    return None
+
+
 @mcp.tool()
 async def create_transaction(
     account_id: int,
     amount: float,
     transaction_type: str,
-    description: str = "",
+    description: str,
+    merchant: str,
     category_id: int | None = None,
     category_name: str | None = None,
     secondary_category_id: int | None = None,
@@ -124,7 +172,7 @@ async def create_transaction(
 
     Args:
         account_id: The unique database id of the account this applies to (use list_accounts).
-        amount: The monetary value of the transaction. For expenses, use a negative float.
+        amount: The monetary value of the transaction. Always pass a positive number — the transaction_type determines whether it adds or subtracts from balances.
         transaction_type: 'expense', 'income', or 'transfer'. Affects account balance logic.
         description: A short memo describing the purchase, vendor, or reasoning.
         category_id: The primary category id (use get_categories to find ids).
@@ -137,38 +185,49 @@ async def create_transaction(
     Returns:
         A dictionary containing the generated transaction id, actual logged amount, and recorded type.
     """
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     from lira.db.models import Category, PaymentMethod
 
     with DatabaseSession() as session:
+        if not account_id:
+            first_account = session.query(Account).first()
+            if first_account:
+                account_id = first_account.id
+            else:
+                raise ValueError("No accounts found. Please create an account first.")
+
         account = session.query(Account).get(account_id)
         if not account:
             raise ValueError(f"Account {account_id} not found")
 
         # Resolve category name to ID if provided
         if category_name and not category_id:
-            cat = session.execute(
-                select(Category).where(Category.name == category_name)
-            ).scalar_one_or_none()
-            if cat:
-                category_id = cat.id
-            else:
-                raise ValueError(f"Category '{category_name}' not found")
+            category_id = _resolve_category_name(session, category_name)
+            if not category_id:
+                raise ValueError(
+                    f"Category '{category_name}' not found. You must create the category first."
+                )
+        if not category_id:
+            raise ValueError("category_id or category_name must be provided")
 
         # Resolve secondary category name to ID if provided
         if secondary_category_name and not secondary_category_id:
-            cat = session.execute(
-                select(Category).where(Category.name == secondary_category_name)
-            ).scalar_one_or_none()
-            if cat:
-                secondary_category_id = cat.id
+            secondary_category_id = _resolve_category_name(session, secondary_category_name)
+            if not secondary_category_id:
+                raise ValueError(
+                    f"Secondary category '{secondary_category_name}' not found. You must create the category first."
+                )
+        if not secondary_category_id:
+            raise ValueError("secondary_category_id or secondary_category_name must be provided")
 
         # Resolve payment method name to ID if provided
         payment_method = None
         if payment_method_name and not payment_method_id:
             payment_method = session.execute(
-                select(PaymentMethod).where(PaymentMethod.name == payment_method_name)
+                select(PaymentMethod).where(
+                    func.lower(PaymentMethod.name) == payment_method_name.lower()
+                )
             ).scalar_one_or_none()
             if payment_method:
                 payment_method_id = payment_method.id
@@ -177,32 +236,38 @@ async def create_transaction(
         elif payment_method_id:
             payment_method = session.query(PaymentMethod).get(payment_method_id)
 
+        if not payment_method_id:
+            raise ValueError("payment_method_id or payment_method_name must be provided")
+
         tx_type = TransactionType(transaction_type)
-        dec_amount = Decimal(str(amount))
+        # Always store a positive amount; the transaction_type determines direction.
+        # Accept negative amounts from LLM but normalise to positive.
+        abs_amount = abs(Decimal(str(amount)))
 
         transaction = Transaction(
             account_id=account_id,
             transaction_type=tx_type,
-            amount=dec_amount,
+            amount=abs_amount,
             description=description,
+            merchant=merchant,
             category_id=category_id,
             secondary_category_id=secondary_category_id,
             payment_method_id=payment_method_id,
             date=datetime.now(),
         )
 
-        # Update account balance
+        # Update account balance (expense = subtract, income = add)
         if tx_type == TransactionType.EXPENSE:
-            account.balance -= dec_amount
+            account.balance -= abs_amount
         elif tx_type == TransactionType.INCOME:
-            account.balance += dec_amount
+            account.balance += abs_amount
 
-        # Update payment method balance if linked
+        # Update payment method balance
         if payment_method:
             if tx_type == TransactionType.EXPENSE:
-                payment_method.balance -= dec_amount
+                payment_method.balance -= abs_amount
             elif tx_type == TransactionType.INCOME:
-                payment_method.balance += dec_amount
+                payment_method.balance += abs_amount
 
         session.add(transaction)
         session.commit()
@@ -289,16 +354,17 @@ async def generate_plot(
 @mcp.tool()
 async def execute_sql(
     query: str,
-    params: dict[str, Any] | None = None,
+    params: Any = None,
 ) -> list[dict[str, Any]]:
     """Execute a SQL SELECT query on the database. Use this for read-only queries.
 
     WARNING: This tool should only be used for SELECT queries.
     Mutations should go through the diff engine.
+    Note: To get category names, JOIN `categories` on `transactions.category_id = categories.id` (do NOT use `T.category_name`).
 
     Args:
         query: SQL query string
-        params: Query parameters
+        params: Query parameters (dict or None)
 
     Returns:
         Query results
@@ -307,7 +373,8 @@ async def execute_sql(
 
     from lira.db.session import DatabaseSession
 
-    params = params or {}
+    if params is None:
+        params = {}
     normalized = query.strip().upper()
 
     if ";" in normalized.rstrip(";"):
@@ -701,6 +768,53 @@ async def get_categories() -> list[dict[str, Any]]:
         }
         for cat in categories
     ]
+
+
+@mcp.tool()
+async def create_category(
+    name: str, parent_id: int | None = None, is_system: bool = False
+) -> dict[str, Any]:
+    """Create a new transaction category.
+
+    Categories should be structured hierarchically. E.g. "FOOD" as parent, and "groceries" as child constraint.
+
+    Args:
+        name: The name of the category (e.g. "FOOD", "groceries")
+        parent_id: Optional parent category ID
+        is_system: Whether this is a system category
+
+    Returns:
+        A dictionary containing the generated category id, name, and parent_id.
+    """
+    from sqlalchemy import func, select
+    from lira.db.models import Category
+    from lira.db.session import DatabaseSession
+
+    with DatabaseSession() as session:
+        # Check if category already exists to avoid duplicates
+        existing = session.execute(
+            select(Category).where(func.lower(Category.name) == name.lower())
+        ).scalar_one_or_none()
+
+        if existing:
+            return {
+                "id": existing.id,
+                "name": existing.name,
+                "parent_id": existing.parent_id,
+            }
+
+        category = Category(
+            name=name,
+            parent_id=parent_id,
+            is_system=is_system,
+        )
+        session.add(category)
+        session.commit()
+        return {
+            "id": category.id,
+            "name": category.name,
+            "parent_id": category.parent_id,
+        }
 
 
 @mcp.tool()

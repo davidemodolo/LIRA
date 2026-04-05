@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from lira.core.agent import Agent, AgentConfig
+from lira.core.agent import Agent, AgentConfig, AgentState
 from lira.db.session import DatabaseSession, init_database
 from lira.version import __version__
 
@@ -28,6 +28,11 @@ from lira.api.routes import plots as plots_routes
 
 logger = logging.getLogger(__name__)
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
 
 # Basic Pydantic models for the chat
 class ChatMessage(BaseModel):
@@ -39,6 +44,11 @@ class AgentChatRequest(BaseModel):
     messages: list[ChatMessage]
     agent_id: str | None = None
     stream: bool = False
+
+
+class ConfirmRequest(BaseModel):
+    pending_tool_calls: list[dict[str, Any]]
+    stream: bool = True
 
 
 class AgentChatResponse(BaseModel):
@@ -148,6 +158,52 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
         )
     except Exception as e:
         logger.exception("Agent run failed")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    finally:
+        await agent.llm_provider.close()
+
+
+@app.post("/api/chat/confirm", tags=["agent"])
+async def confirm_mutations(request: ConfirmRequest) -> Any:
+    """Execute previously previewed and confirmed mutation tool calls.
+
+    Called by the frontend after the user clicks 'Confirm' on a HITL diff preview.
+    Executes the tool calls directly without re-calling the LLM.
+    """
+    if not request.pending_tool_calls:
+        raise HTTPException(status_code=400, detail="No pending tool calls to confirm")
+
+    agent = Agent(AgentConfig())
+
+    try:
+        if request.stream:
+
+            async def generate() -> AsyncGenerator[str, None]:
+                import json
+                from dataclasses import asdict
+
+                async for event in agent.run_confirmed(request.pending_tool_calls):
+                    yield json.dumps(asdict(event)) + "\n"
+
+            return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+        results: list[dict[str, Any]] = []
+        final_message = ""
+        async for event in agent.run_confirmed(request.pending_tool_calls):
+            if event.kind == "tool_result":
+                results.append(event.payload)
+            elif event.kind == "final":
+                resp = event.payload.get("response")
+                if resp:
+                    final_message = resp.message
+
+        return AgentChatResponse(
+            message=ChatMessage(role="assistant", content=final_message),
+            final_state=AgentState.COMPLETE,
+            usage={"tool_results": results},
+        )
+    except Exception as e:
+        logger.exception("Confirm mutations failed")
         raise HTTPException(status_code=500, detail=str(e)) from e
     finally:
         await agent.llm_provider.close()

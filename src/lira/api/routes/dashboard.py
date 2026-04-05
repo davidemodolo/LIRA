@@ -11,10 +11,12 @@ from sqlalchemy import func, select
 
 from lira.db.models import (
     Account,
+    AuditLog,
     Category,
     DashboardPlot,
     Holding,
     PaymentMethod,
+    Settings,
     Transaction,
     TransactionType,
 )
@@ -148,8 +150,15 @@ async def get_transactions(
     offset: int = Query(0),
 ) -> dict[str, Any]:
     """Get transactions with filters."""
+    from sqlalchemy.orm import joinedload
+
     with DatabaseSession() as session:
-        query = select(Transaction)
+        query = select(Transaction).options(
+            joinedload(Transaction.category),
+            joinedload(Transaction.secondary_category),
+            joinedload(Transaction.payment_method),
+            joinedload(Transaction.account),
+        )
 
         if account_id:
             query = query.filter(Transaction.account_id == account_id)
@@ -166,10 +175,31 @@ async def get_transactions(
             end_dt = datetime.fromisoformat(end_date)
             query = query.filter(Transaction.date <= end_dt)
 
-        total = session.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
+        # Count matching rows without the joinedload (cleaner count)
+        count_q = select(func.count(Transaction.id))
+        if account_id:
+            count_q = count_q.filter(Transaction.account_id == account_id)
+        if category_id:
+            count_q = count_q.filter(Transaction.category_id == category_id)
+        if payment_method_id:
+            count_q = count_q.filter(Transaction.payment_method_id == payment_method_id)
+        if transaction_type:
+            count_q = count_q.filter(Transaction.transaction_type == TransactionType(transaction_type))
+        if start_date:
+            count_q = count_q.filter(Transaction.date >= datetime.fromisoformat(start_date))
+        if end_date:
+            count_q = count_q.filter(Transaction.date <= datetime.fromisoformat(end_date))
+        total = session.execute(count_q).scalar() or 0
 
         query = query.order_by(Transaction.date.desc()).offset(offset).limit(limit)
-        transactions = session.execute(query).scalars().all()
+        transactions = session.execute(query).unique().scalars().all()
+
+        def category_label(t: Transaction) -> str:
+            if t.category and t.secondary_category and t.category_id != t.secondary_category_id:
+                return f"{t.category.name} > {t.secondary_category.name}"
+            if t.category:
+                return t.category.name
+            return "-"
 
         return {
             "total": total,
@@ -177,8 +207,11 @@ async def get_transactions(
                 {
                     "id": t.id,
                     "account_id": t.account_id,
+                    "account_name": t.account.name if t.account else "-",
                     "category_id": t.category_id,
+                    "category_name": category_label(t),
                     "payment_method_id": t.payment_method_id,
+                    "payment_method_name": t.payment_method.name if t.payment_method else "-",
                     "type": t.transaction_type.value,
                     "amount": float(t.amount),
                     "currency": t.currency,
@@ -363,3 +396,100 @@ async def get_monthly_spending(months: int = Query(6)) -> list[dict[str, Any]]:
         results = session.execute(query).all()
 
         return [{"month": r.month, "amount": float(r.total)} for r in results]
+
+
+@router.get("/settings")
+async def get_settings() -> dict[str, Any]:
+    """Get user settings including currency."""
+    with DatabaseSession() as session:
+        settings_rows = session.execute(select(Settings)).scalars().all()
+        data = {s.key: s.value for s in settings_rows}
+        return {
+            "currency": data.get("currency", "USD"),
+        }
+
+
+@router.get("/audit-log")
+async def get_audit_log(limit: int = Query(50, le=200)) -> list[dict[str, Any]]:
+    """Get recent audit log entries."""
+    with DatabaseSession() as session:
+        entries = (
+            session.execute(
+                select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            {
+                "id": e.id,
+                "table_name": e.table_name,
+                "record_id": e.record_id,
+                "operation": e.operation,
+                "tool_name": e.tool_name,
+                "before_state": json.loads(e.before_state) if e.before_state else None,
+                "after_state": json.loads(e.after_state) if e.after_state else None,
+                "created_at": e.created_at.isoformat(),
+            }
+            for e in entries
+        ]
+
+
+@router.post("/audit-log/{entry_id}/undo")
+async def undo_audit_entry(entry_id: int) -> dict[str, Any]:
+    """Undo a specific audit log entry by restoring the before state."""
+    import json as _json
+
+    with DatabaseSession() as session:
+        entry = session.execute(
+            select(AuditLog).where(AuditLog.id == entry_id)
+        ).scalar_one_or_none()
+
+        if not entry:
+            raise HTTPException(status_code=404, detail="Audit entry not found")
+
+        if entry.operation == "create" and entry.after_state:
+            after = _json.loads(entry.after_state)
+            record_id = after.get("id") or entry.record_id
+            if entry.table_name == "transactions" and record_id:
+                tx = session.execute(
+                    select(Transaction).where(Transaction.id == record_id)
+                ).scalar_one_or_none()
+                if tx:
+                    account = session.execute(
+                        select(Account).where(Account.id == tx.account_id)
+                    ).scalar_one_or_none()
+                    if account:
+                        if tx.transaction_type == TransactionType.EXPENSE:
+                            account.balance += tx.amount
+                        elif tx.transaction_type == TransactionType.INCOME:
+                            account.balance -= tx.amount
+                    if tx.payment_method:
+                        if tx.transaction_type == TransactionType.EXPENSE:
+                            tx.payment_method.balance += tx.amount
+                        elif tx.transaction_type == TransactionType.INCOME:
+                            tx.payment_method.balance -= tx.amount
+                    session.delete(tx)
+            elif entry.table_name == "payment_methods" and record_id:
+                pm = session.execute(
+                    select(PaymentMethod).where(PaymentMethod.id == record_id)
+                ).scalar_one_or_none()
+                if pm:
+                    session.delete(pm)
+
+        elif entry.operation == "update" and entry.before_state:
+            before = _json.loads(entry.before_state)
+            record_id = before.get("id") or entry.record_id
+            if entry.table_name == "payment_methods" and record_id:
+                pm = session.execute(
+                    select(PaymentMethod).where(PaymentMethod.id == record_id)
+                ).scalar_one_or_none()
+                if pm and "balance" in before:
+                    from decimal import Decimal
+                    pm.balance = Decimal(str(before["balance"]))
+
+        session.commit()
+        session.delete(entry)
+        session.commit()
+
+        return {"status": "undone", "entry_id": entry_id}

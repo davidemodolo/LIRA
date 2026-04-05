@@ -157,6 +157,10 @@ class LIRAApp(App):
         self._suggestions: list[tuple[str, str]] = []
         self._warmup_task: asyncio.Task[None] | None = None
         self._agent_task: asyncio.Task[None] | None = None
+        # HITL state
+        self._awaiting_hitl_confirm: bool = False
+        self._pending_hitl_calls: list[dict[str, Any]] = []
+        self._pending_hitl_trace: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -222,6 +226,22 @@ class LIRAApp(App):
         if user_input.lower() in ("exit", "quit", "q"):
             history.add_system_message("[yellow]Goodbye![/yellow]")
             self.exit()
+            return
+
+        # HITL: intercept y/n confirmation input
+        if self._awaiting_hitl_confirm:
+            self._awaiting_hitl_confirm = False
+            if user_input.lower() in ("y", "yes"):
+                history.add_system_message("[green]Confirmed. Applying changes...[/green]")
+                self._agent_task = asyncio.create_task(
+                    self._execute_confirmed_mutations(history)
+                )
+            else:
+                history.add_system_message("[yellow]Cancelled. No changes were made.[/yellow]")
+                self._pending_hitl_calls = []
+                self._pending_hitl_trace = []
+            event.input.value = ""
+            self._update_suggestions("")
             return
 
         self.handle_command(user_input, history)
@@ -351,6 +371,8 @@ class LIRAApp(App):
                     line = self._format_tool_result(event.payload)
                     trace_lines.append(line)
                     history.add_trace_line(line)
+                elif event.kind == "mutation_preview":
+                    trace_lines.append("[yellow]⚠ mutation_preview[/yellow]")
                 elif event.kind == "llm_token" and event.content:
                     pass
 
@@ -358,10 +380,17 @@ class LIRAApp(App):
 
             self.last_trace = response.get("trace", [])
 
-            if response["error"]:
+            if response["error"] and response.get("state") != "waiting_input":
                 history.add_error(response["error"])
                 if self.show_trace:
                     self.display_trace(history)
+                return
+
+            # HITL: If the agent is waiting for input on a mutation preview, show the diff
+            pending = response.get("pending_tool_calls")
+            if pending and response.get("state") == "waiting_input":
+                history.add_lira_message(response["message"])
+                await self._handle_hitl_confirmation(pending, history, trace_lines)
                 return
 
             history.add_lira_message(response["message"])
@@ -374,6 +403,33 @@ class LIRAApp(App):
                 )
         except Exception as e:
             history.add_error(f"Error: {e}")
+
+    async def _handle_hitl_confirmation(
+        self,
+        pending_calls: list[dict[str, Any]],
+        history: MessageHistory,
+        trace_lines: list[str],
+    ) -> None:
+        """Show a Rich diff table for pending mutations and prompt for confirmation."""
+        from rich.table import Table
+        from rich.console import Console as RichConsole
+
+        history.add_system_message("[bold yellow]─── Proposed Changes ─────────────────────────────────────────[/bold yellow]")
+
+        for i, call in enumerate(pending_calls, 1):
+            tool_name = call.get("name", "?")
+            args = call.get("arguments", {})
+            history.add_system_message(
+                f"[{i}] [cyan]{tool_name}[/cyan]  args: [dim]{json.dumps(args)[:200]}[/dim]"
+            )
+
+        history.add_system_message("[bold yellow]──────────────────────────────────────────────────────────────[/bold yellow]")
+        history.add_system_message("[bold]Confirm? [y/N][/bold] ")
+
+        # We need to get user input from the same input widget
+        self._pending_hitl_calls = pending_calls
+        self._pending_hitl_trace = trace_lines
+        self._awaiting_hitl_confirm = True
 
     def _format_tool_call(self, payload: dict[str, Any]) -> str:
         name = str(payload.get("name", "unknown"))
@@ -400,6 +456,30 @@ class LIRAApp(App):
             return value
         return value[: max_chars - 3] + "..."
 
+    async def _execute_confirmed_mutations(self, history: MessageHistory) -> None:
+        """Execute HITL-confirmed pending tool calls."""
+        if not self._pending_hitl_calls or self.agent is None:
+            history.add_system_message("[yellow]No pending changes to apply.[/yellow]")
+            return
+
+        calls = self._pending_hitl_calls
+        self._pending_hitl_calls = []
+        self._pending_hitl_trace = []
+
+        try:
+            async for event in self.agent.run_confirmed(calls):
+                if event.kind == "tool_result":
+                    line = self._format_tool_result(event.payload)
+                    history.add_trace_line(line)
+                elif event.kind == "final":
+                    resp = event.payload.get("response")
+                    if resp:
+                        history.add_lira_message(resp.message)
+                elif event.kind == "status" and event.content:
+                    history.add_trace_line(f"state> {event.content}")
+        except Exception as e:
+            history.add_error(f"Error executing confirmed changes: {e}")
+
     async def _process_query(
         self,
         query: str,
@@ -414,6 +494,7 @@ class LIRAApp(App):
                 "error": "agent not initialized",
                 "trace": [],
                 "draft": "",
+                "pending_tool_calls": None,
             }
 
         trace_lines: list[str] = []
@@ -444,6 +525,7 @@ class LIRAApp(App):
                 "error": "missing final response",
                 "trace": trace_lines,
                 "draft": "".join(draft_chunks),
+                "pending_tool_calls": None,
             }
 
         return {
@@ -454,6 +536,7 @@ class LIRAApp(App):
             "error": final_response.error,
             "trace": trace_lines,
             "draft": "".join(draft_chunks),
+            "pending_tool_calls": final_response.pending_tool_calls,
         }
 
 

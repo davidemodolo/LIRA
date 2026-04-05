@@ -17,6 +17,7 @@ from lira.db.models import (
     AccountType,
     Base,
     Category,
+    PaymentMethod,
     Holding,
     Portfolio,
     Transaction,
@@ -80,17 +81,33 @@ def sample_category(session: Session) -> Category:
     session.commit()
     return category
 
+@pytest.fixture
+def sample_payment_method(session: Session, sample_account: Account) -> PaymentMethod:
+    pm = PaymentMethod(
+        name="Debit Card",
+        balance=Decimal("1000.00"),
+        is_default=True,
+        account_id=sample_account.id,
+    )
+    session.add(pm)
+    session.commit()
+    return pm
+
+
 
 @pytest.fixture
 def sample_transaction(
     session: Session,
     sample_account: Account,
     sample_category: Category,
+    sample_payment_method: PaymentMethod,
 ) -> Transaction:
     """Create a sample transaction for testing."""
     transaction = Transaction(
         account_id=sample_account.id,
         category_id=sample_category.id,
+        secondary_category_id=sample_category.id,
+        payment_method_id=sample_payment_method.id,
         transaction_type=TransactionType.EXPENSE,
         amount=Decimal("-50.00"),
         currency="USD",
@@ -137,47 +154,69 @@ def sample_holding(session: Session, sample_portfolio: Portfolio) -> Holding:
 def multiple_transactions(
     session: Session,
     sample_account: Account,
+    sample_category: Category,
+    sample_payment_method: PaymentMethod,
 ) -> list[Transaction]:
     """Create multiple transactions for testing."""
     transactions = [
         Transaction(
             account_id=sample_account.id,
+            category_id=sample_category.id,
+            secondary_category_id=sample_category.id,
+            payment_method_id=sample_payment_method.id,
             transaction_type=TransactionType.INCOME,
             amount=Decimal("5000.00"),
             currency="USD",
             description="Salary",
+            merchant="My Company",
             date=datetime(2024, 1, 15),
         ),
         Transaction(
             account_id=sample_account.id,
+            category_id=sample_category.id,
+            secondary_category_id=sample_category.id,
+            payment_method_id=sample_payment_method.id,
             transaction_type=TransactionType.EXPENSE,
             amount=Decimal("-100.00"),
             currency="USD",
             description="Groceries",
+            merchant="Super Mart",
             date=datetime(2024, 1, 16),
         ),
         Transaction(
             account_id=sample_account.id,
+            category_id=sample_category.id,
+            secondary_category_id=sample_category.id,
+            payment_method_id=sample_payment_method.id,
             transaction_type=TransactionType.EXPENSE,
             amount=Decimal("-50.00"),
             currency="USD",
             description="Gas",
+            merchant="Gas Station",
             date=datetime(2024, 1, 17),
         ),
         Transaction(
             account_id=sample_account.id,
+            category_id=sample_category.id,
+            secondary_category_id=sample_category.id,
+            payment_method_id=sample_payment_method.id,
             transaction_type=TransactionType.EXPENSE,
             amount=Decimal("-200.00"),
             currency="USD",
             description="Rent",
+            merchant="Landlord",
             date=datetime(2024, 1, 1),
         ),
         Transaction(
             account_id=sample_account.id,
+            category_id=sample_category.id,
+            secondary_category_id=sample_category.id,
+            payment_method_id=sample_payment_method.id,
             transaction_type=TransactionType.TRANSFER,
             amount=Decimal("500.00"),
             currency="USD",
             description="Savings transfer",
+            merchant="My Bank",
             date=datetime(2024, 1, 20),
         ),
     ]

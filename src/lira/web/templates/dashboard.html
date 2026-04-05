@@ -3,578 +3,1554 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>L.I.R.A. Dashboard</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>L.I.R.A.</title>
     <style>
         :root {
-            --bg-primary: #0f172a;
-            --bg-secondary: #1e293b;
-            --bg-tertiary: #334155;
-            --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
-            --accent: #38bdf8;
-            --accent-dark: #0ea5e9;
+            --bg: #0a0e0a;
+            --bg2: #0d120d;
+            --bg3: #111811;
+            --border: #1f2e1f;
+            --border2: #2a3f2a;
+            --green: #39d353;
+            --green2: #00c853;
+            --green-dim: #1e4d2e;
+            --amber: #f0a500;
+            --amber-dim: #3d2a00;
+            --red: #ff4c4c;
+            --red-dim: #3d1010;
+            --cyan: #00e5ff;
+            --cyan-dim: #003d4d;
+            --text: #c8dcc8;
+            --text-dim: #5a7a5a;
+            --text-muted: #3a5a3a;
+            --mono: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
         }
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
+            font-family: var(--mono);
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+            font-size: 13px;
         }
 
-        .htmx-indicator { opacity: 0; transition: opacity 0.2s; }
-        .htmx-request .htmx-indicator { opacity: 1; }
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: var(--bg2); }
+        ::-webkit-scrollbar-thumb { background: var(--border2); }
+        ::-webkit-scrollbar-thumb:hover { background: var(--green-dim); }
 
-        .chat-message { max-width: 80%; }
-        .user-message { margin-left: auto; }
-        .assistant-message { margin-right: auto; }
-
-        .plot-container img { width: 100%; height: 100%; object-fit: contain; }
-
+        /* Sidebar */
+        aside {
+            width: 220px;
+            background: var(--bg2);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .logo {
+            color: var(--green);
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .logo-bracket { color: var(--text-dim); }
+        .logo-version { color: var(--text-dim); font-size: 10px; font-weight: 400; }
+        nav { padding: 8px; flex: 1; }
         .nav-btn {
-            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 8px 10px;
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            text-align: left;
+            font-family: var(--mono);
+            font-size: 12px;
+            border-left: 2px solid transparent;
+            transition: all 0.15s;
         }
-        
-        .nav-btn:hover, .nav-btn.active {
-            background: var(--bg-tertiary);
+        .nav-btn:hover { color: var(--text); background: var(--bg3); }
+        .nav-btn.active { color: var(--green); border-left-color: var(--green); background: var(--bg3); }
+        .nav-prompt { color: var(--text-dim); font-size: 11px; }
+        .nav-btn.active .nav-prompt { color: var(--green); }
+        .sidebar-footer {
+            padding: 12px 16px;
+            border-top: 1px solid var(--border);
         }
+        .net-worth-label { color: var(--text-dim); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+        .net-worth-value { color: var(--green); font-size: 22px; font-weight: 700; letter-spacing: -0.5px; margin-top: 2px; }
+
+        /* Main content */
+        main { flex: 1; overflow-y: auto; padding: 24px; background: var(--bg); }
+        section { display: none; max-width: 1200px; margin: 0 auto; }
+        section.active { display: block; }
+
+        /* Section header */
+        .section-header { margin-bottom: 20px; }
+        .section-title {
+            color: var(--green);
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+        .section-title::before { content: '> '; color: var(--text-dim); }
+        .section-subtitle { color: var(--text-dim); font-size: 11px; margin-top: 4px; }
+
+        /* Cards / panels */
+        .panel {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            padding: 16px;
+        }
+        .panel-title {
+            color: var(--text-dim);
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        /* Grid */
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+        @media (max-width: 900px) {
+            .grid-4 { grid-template-columns: 1fr 1fr; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .grid-3 { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 600px) {
+            .grid-4 { grid-template-columns: 1fr; }
+        }
+
+        /* Stat card */
+        .stat-card { background: var(--bg2); border: 1px solid var(--border); padding: 14px; }
+        .stat-label { color: var(--text-dim); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; }
+        .stat-value { font-size: 24px; font-weight: 700; letter-spacing: -1px; margin-top: 4px; font-family: var(--mono); }
+        .stat-green { color: var(--green); }
+        .stat-amber { color: var(--amber); }
+        .stat-red { color: var(--red); }
+        .stat-cyan { color: var(--cyan); }
+
+        /* Tables */
+        .table-wrap { background: var(--bg2); border: 1px solid var(--border); overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        thead { border-bottom: 1px solid var(--border2); }
+        th {
+            padding: 10px 14px;
+            text-align: left;
+            color: var(--text-dim);
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        th.right { text-align: right; }
+        td { padding: 9px 14px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; }
+        td.right { text-align: right; font-variant-numeric: tabular-nums; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: var(--bg3); }
+        .td-dim { color: var(--text-dim); }
+        .td-green { color: var(--green); }
+        .td-red { color: var(--red); }
+        .td-amber { color: var(--amber); }
+        .td-cyan { color: var(--cyan); }
+
+        /* Type badges */
+        .badge {
+            display: inline-block;
+            padding: 2px 7px;
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-weight: 600;
+            border: 1px solid;
+        }
+        .badge-expense { color: var(--red); border-color: var(--red); background: var(--red-dim); }
+        .badge-income  { color: var(--green); border-color: var(--green); background: var(--green-dim); }
+        .badge-transfer { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
+        .badge-default { color: var(--amber); border-color: var(--amber); background: var(--amber-dim); }
+
+        /* Plot containers */
+        .plot-box {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .plot-box h3 {
+            color: var(--text-dim);
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .plot-inner {
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+        .plot-inner img { max-width: 100%; max-height: 300px; object-fit: contain; }
+
+        /* Payment method cards */
+        .pm-card {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            padding: 14px;
+        }
+        .pm-name { color: var(--text-dim); font-size: 11px; letter-spacing: 0.5px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .pm-balance { color: var(--green); font-size: 20px; font-weight: 700; }
+
+        /* ========== Chat Widget ========== */
+        #chat-fab {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--green);
+            color: var(--bg);
+            border: none;
+            padding: 12px 16px;
+            cursor: pointer;
+            font-family: var(--mono);
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            z-index: 100;
+        }
+        #chat-fab:hover { background: var(--green2); }
+
+        #chat-window {
+            position: fixed;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 600px;
+            min-width: 300px;
+            max-width: calc(100vw - 240px);
+            background: var(--bg2);
+            border-left: 1px solid var(--border);
+            display: none;
+            flex-direction: column;
+            z-index: 200;
+            user-select: none;
+        }
+        #chat-window.open { display: flex; }
+
+        /* Resize handle — left edge of chat panel */
+        #chat-resize-handle {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 5px;
+            cursor: col-resize;
+            z-index: 10;
+            transition: background 0.15s;
+        }
+        #chat-resize-handle:hover,
+        #chat-resize-handle.dragging { background: var(--green-dim); }
+
+        .chat-header {
+            background: var(--bg);
+            border-bottom: 1px solid var(--border);
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .chat-title { color: var(--green); font-size: 13px; font-weight: 700; letter-spacing: 1px; }
+        .chat-status { display: flex; align-items: center; gap: 6px; }
+        .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+        .chat-actions { display: flex; gap: 4px; align-items: center; }
+        .chat-btn {
+            background: none;
+            border: 1px solid var(--border2);
+            color: var(--text-dim);
+            padding: 4px 8px;
+            cursor: pointer;
+            font-family: var(--mono);
+            font-size: 11px;
+        }
+        .chat-btn:hover { color: var(--green); border-color: var(--green); }
+
+        /* Status bar — shown while the server is busy */
+        #chat-status-bar {
+            display: none;
+            background: var(--bg);
+            border-bottom: 1px solid var(--border);
+            padding: 5px 14px;
+            font-size: 11px;
+            color: var(--amber);
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        #chat-status-bar.visible { display: flex; }
+        .spinner-char { font-size: 13px; animation: none; display: inline-block; width: 14px; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .status-dot.thinking { animation: pulse 0.8s infinite; background: var(--amber); }
+
+        .chat-body { flex: 1; display: flex; overflow: hidden; }
+
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .msg-user {
+            align-self: flex-end;
+            background: var(--green-dim);
+            border: 1px solid var(--green);
+            color: var(--green);
+            padding: 8px 12px;
+            max-width: 85%;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .msg-user::before { content: '> '; color: var(--text-dim); }
+
+        .msg-assistant {
+            align-self: flex-start;
+            background: var(--bg3);
+            border: 1px solid var(--border2);
+            color: var(--text);
+            padding: 8px 12px;
+            max-width: 85%;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .msg-assistant::before { content: '# '; color: var(--text-dim); }
+
+        .msg-system {
+            align-self: center;
+            color: var(--text-dim);
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            border: 1px solid var(--border);
+            padding: 3px 10px;
+        }
+
+        .typing-dots span {
+            display: inline-block;
+            width: 5px; height: 5px;
+            background: var(--green);
+            border-radius: 50%;
+            margin: 0 2px;
+            animation: dot-blink 1.2s infinite both;
+        }
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes dot-blink {
+            0%, 80%, 100% { opacity: 0.2; }
+            40% { opacity: 1; }
+        }
+
+        /* Trace panel */
+        #trace-panel {
+            width: 260px;
+            border-left: 1px solid var(--border);
+            background: var(--bg);
+            display: none;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        #trace-panel.open { display: flex; }
+        .trace-header {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-dim);
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+        #trace-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            font-size: 10px;
+            line-height: 1.6;
+        }
+        .trace-status { color: var(--amber); }
+        .trace-call { color: var(--cyan); }
+        .trace-ok { color: var(--green); }
+        .trace-err { color: var(--red); }
+
+        /* Chat input */
+        .chat-input-area {
+            flex-shrink: 0;
+            border-top: 1px solid var(--border);
+            padding: 8px;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .input-prompt { color: var(--green); font-size: 13px; font-weight: 700; flex-shrink: 0; }
+        #chat-input {
+            flex: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 12px;
+            caret-color: var(--green);
+        }
+        #chat-input::placeholder { color: var(--text-muted); }
+        .send-btn {
+            background: var(--green-dim);
+            border: 1px solid var(--green);
+            color: var(--green);
+            padding: 4px 10px;
+            cursor: pointer;
+            font-family: var(--mono);
+            font-size: 11px;
+        }
+        .send-btn:hover { background: var(--green); color: var(--bg); }
+
+        /* ===== HITL Diff Card ===== */
+        .diff-card {
+            background: var(--bg);
+            border: 1px solid var(--amber);
+            padding: 12px;
+            margin: 4px 0;
+            max-width: 100%;
+        }
+        .diff-card-header {
+            color: var(--amber);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .diff-card-header::before { content: '[!] '; }
+        .diff-item {
+            border: 1px solid var(--border2);
+            margin-bottom: 8px;
+            padding: 8px;
+        }
+        .diff-item-title { color: var(--cyan); font-size: 11px; margin-bottom: 6px; }
+        .diff-row { display: flex; gap: 8px; margin-bottom: 4px; }
+        .diff-label { color: var(--text-dim); font-size: 10px; width: 50px; flex-shrink: 0; text-transform: uppercase; }
+        .diff-before { color: var(--red); font-size: 11px; flex: 1; word-break: break-all; }
+        .diff-after  { color: var(--green); font-size: 11px; flex: 1; word-break: break-all; }
+        .diff-actions { display: flex; gap: 8px; margin-top: 8px; }
+        .btn-confirm {
+            background: var(--green-dim);
+            border: 1px solid var(--green);
+            color: var(--green);
+            padding: 5px 14px;
+            cursor: pointer;
+            font-family: var(--mono);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+        .btn-confirm:hover { background: var(--green); color: var(--bg); }
+        .btn-cancel {
+            background: var(--red-dim);
+            border: 1px solid var(--red);
+            color: var(--red);
+            padding: 5px 14px;
+            cursor: pointer;
+            font-family: var(--mono);
+            font-size: 11px;
+        }
+        .btn-cancel:hover { background: var(--red); color: #fff; }
+
+        /* Markdown in chat */
+        .msg-assistant strong { color: var(--green); }
+        .msg-assistant code {
+            background: var(--bg);
+            border: 1px solid var(--border2);
+            padding: 1px 4px;
+            color: var(--cyan);
+            font-family: var(--mono);
+        }
+        .msg-assistant pre {
+            background: var(--bg);
+            border: 1px solid var(--border2);
+            padding: 8px;
+            overflow-x: auto;
+            margin: 4px 0;
+            font-size: 11px;
+        }
+        .msg-assistant ul { margin-left: 16px; }
+        .msg-assistant li { color: var(--text); font-size: 12px; }
+        .msg-assistant h1, .msg-assistant h2, .msg-assistant h3 { color: var(--green); margin: 4px 0; }
+        .msg-assistant a { color: var(--cyan); }
+
+        /* Audit log section */
+        .audit-btn {
+            background: none;
+            border: 1px solid var(--border2);
+            color: var(--text-dim);
+            padding: 4px 10px;
+            cursor: pointer;
+            font-family: var(--mono);
+            font-size: 11px;
+        }
+        .audit-btn:hover { color: var(--amber); border-color: var(--amber); }
+        .undo-btn {
+            background: none;
+            border: 1px solid var(--border2);
+            color: var(--text-dim);
+            padding: 2px 6px;
+            cursor: pointer;
+            font-family: var(--mono);
+            font-size: 10px;
+        }
+        .undo-btn:hover { color: var(--amber); border-color: var(--amber); }
     </style>
 </head>
-<body class="h-screen flex overflow-hidden">
+<body>
     <!-- Sidebar -->
-    <aside class="w-64 bg-slate-800 p-4 flex flex-col flex-shrink-0">
-        <h1 class="text-2xl font-bold text-cyan-400 mb-6">L.I.R.A.</h1>
-        <nav class="space-y-1">
-            <button onclick="showSection('dashboard')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Dashboard</button>
-            <button onclick="showSection('transactions')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Transactions</button>
-            <button onclick="showSection('accounts')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Payment Methods</button>
-            <button onclick="showSection('investments')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Investments</button>
-            <button onclick="showSection('chat')" class="nav-btn w-full text-left px-4 py-3 rounded-lg transition">Chat</button>
-        </nav>
-        <div class="mt-auto pt-4 border-t border-slate-700">
-            <div class="text-sm text-slate-400">
-                <div>Net Worth</div>
-                <div id="nav-net-worth" class="text-xl font-bold text-green-400">$0.00</div>
+    <aside>
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-bracket">[</span>L.I.R.A<span class="logo-bracket">]</span>
             </div>
+            <div class="logo-version">LIRA Is Recursive Accounting</div>
+        </div>
+        <nav>
+            <button class="nav-btn active" id="nav-dashboard" onclick="showSection('dashboard')">
+                <span class="nav-prompt">$</span> overview
+            </button>
+            <button class="nav-btn" id="nav-transactions" onclick="showSection('transactions')">
+                <span class="nav-prompt">$</span> transactions
+            </button>
+            <button class="nav-btn" id="nav-accounts" onclick="showSection('accounts')">
+                <span class="nav-prompt">$</span> payment-methods
+            </button>
+            <button class="nav-btn" id="nav-investments" onclick="showSection('investments')">
+                <span class="nav-prompt">$</span> investments
+            </button>
+            <button class="nav-btn" id="nav-audit" onclick="showSection('audit')">
+                <span class="nav-prompt">$</span> audit-log
+            </button>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="net-worth-label">Net Worth</div>
+            <div class="net-worth-value" id="nav-net-worth">---</div>
         </div>
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 overflow-auto p-6">
+    <main>
+
         <!-- Dashboard Section -->
-        <section id="dashboard-section" class="space-y-6">
-            <h2 class="text-2xl font-bold mb-4">Dashboard</h2>
-            
-            <!-- Summary Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="bg-slate-800 p-4 rounded-lg">
-                    <div class="text-slate-400 text-sm">Net Worth</div>
-                    <div id="summary-net-worth" class="text-2xl font-bold text-green-400">Loading...</div>
+        <section id="dashboard-section" class="active">
+            <div class="section-header">
+                <div class="section-title">overview</div>
+                <div class="section-subtitle">financial summary // <span id="current-date"></span></div>
+            </div>
+
+            <div class="grid-4">
+                <div class="stat-card">
+                    <div class="stat-label">net worth</div>
+                    <div class="stat-value stat-green" id="summary-net-worth">---</div>
                 </div>
-                <div class="bg-slate-800 p-4 rounded-lg">
-                    <div class="text-slate-400 text-sm">Income</div>
-                    <div id="summary-income" class="text-2xl font-bold text-blue-400">Loading...</div>
+                <div class="stat-card">
+                    <div class="stat-label">total income</div>
+                    <div class="stat-value stat-cyan" id="summary-income">---</div>
                 </div>
-                <div class="bg-slate-800 p-4 rounded-lg">
-                    <div class="text-slate-400 text-sm">Expenses</div>
-                    <div id="summary-expenses" class="text-2xl font-bold text-red-400">Loading...</div>
+                <div class="stat-card">
+                    <div class="stat-label">total expenses</div>
+                    <div class="stat-value stat-red" id="summary-expenses">---</div>
                 </div>
-                <div class="bg-slate-800 p-4 rounded-lg">
-                    <div class="text-slate-400 text-sm">Investments</div>
-                    <div id="summary-investments" class="text-2xl font-bold text-yellow-400">Loading...</div>
+                <div class="stat-card">
+                    <div class="stat-label">investments</div>
+                    <div class="stat-value stat-amber" id="summary-investments">---</div>
                 </div>
             </div>
 
-            <!-- Payment Methods Summary -->
-            <div class="bg-slate-800 p-4 rounded-lg">
-                <div class="text-slate-400 text-sm">Payment Methods Balance</div>
-                <div id="summary-payment-balance" class="text-2xl font-bold text-purple-400">Loading...</div>
+            <div class="grid-2">
+                <div class="plot-box">
+                    <h3>spending by category</h3>
+                    <div class="plot-inner" id="plot-category-spending">loading...</div>
+                </div>
+                <div class="plot-box">
+                    <h3>monthly spending</h3>
+                    <div class="plot-inner" id="plot-monthly-spending">loading...</div>
+                </div>
             </div>
 
-            <!-- Plots -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-slate-800 p-4 rounded-lg">
-                    <h3 class="text-lg font-bold mb-2">Spending by Category</h3>
-                    <div id="plot-category-spending" class="h-64 flex items-center justify-center text-slate-500">
-                        Loading...
+            <div class="plot-box">
+                <h3>net worth history</h3>
+                <div class="plot-inner" id="plot-net-worth">loading...</div>
+            </div>
+
+            <div class="grid-2">
+                <div class="plot-box">
+                    <h3>persistent plots</h3>
+                    <div id="persistent-plots" class="plot-inner" style="min-height:80px; color: var(--text-muted);">
+                        no persistent plots &mdash; ask L.I.R.A. to add one
                     </div>
                 </div>
-                <div class="bg-slate-800 p-4 rounded-lg">
-                    <h3 class="text-lg font-bold mb-2">Monthly Spending</h3>
-                    <div id="plot-monthly-spending" class="h-64 flex items-center justify-center text-slate-500">
-                        Loading...
+                <div class="plot-box" style="border-top: 2px solid var(--cyan);">
+                    <h3>session plots <span style="color:var(--text-muted); font-size:9px;">// temporary</span></h3>
+                    <div id="session-plots-container" class="plot-inner" style="min-height:80px; color: var(--text-muted);" id="session-plots-empty">
+                        plots from this session will appear here
                     </div>
-                </div>
-            </div>
-            <div class="bg-slate-800 p-4 rounded-lg">
-                <h3 class="text-lg font-bold mb-2">Net Worth History</h3>
-                <div id="plot-net-worth" class="h-64 flex items-center justify-center text-slate-500">
-                    Loading...
-                </div>
-            </div>
-
-            <!-- Persistent Plots -->
-            <div class="bg-slate-800 p-4 rounded-lg">
-                <h3 class="text-lg font-bold mb-2">Your Persistent Plots</h3>
-                <div id="persistent-plots" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="text-slate-500">No persistent plots yet. Ask the chat to add one!</div>
                 </div>
             </div>
         </section>
 
         <!-- Transactions Section -->
-        <section id="transactions-section" class="hidden space-y-4">
-            <div class="flex justify-between items-center">
-                <h2 class="text-2xl font-bold">Transactions</h2>
-                <div class="flex gap-2">
-                    <select id="filter-type" class="bg-slate-700 px-3 py-2 rounded" onchange="loadTransactions()">
-                        <option value="">All Types</option>
-                        <option value="income">Income</option>
-                        <option value="expense">Expense</option>
-                        <option value="transfer">Transfer</option>
+        <section id="transactions-section">
+            <div class="section-header" style="display:flex; justify-content:space-between; align-items:flex-end;">
+                <div>
+                    <div class="section-title">transactions</div>
+                    <div class="section-subtitle">full ledger history</div>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <select id="filter-type" onchange="loadTransactions()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
+                        <option value="">all types</option>
+                        <option value="income">income</option>
+                        <option value="expense">expense</option>
+                        <option value="transfer">transfer</option>
                     </select>
-                    <input type="date" id="filter-start" class="bg-slate-700 px-3 py-2 rounded" onchange="loadTransactions()">
-                    <input type="date" id="filter-end" class="bg-slate-700 px-3 py-2 rounded" onchange="loadTransactions()">
+                    <input type="date" id="filter-start" onchange="loadTransactions()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
+                    <input type="date" id="filter-end" onchange="loadTransactions()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
                 </div>
             </div>
-            <div class="bg-slate-800 rounded-lg overflow-hidden">
-                <table class="w-full">
-                    <thead class="bg-slate-700">
+            <div class="table-wrap">
+                <table>
+                    <thead>
                         <tr>
-                            <th class="px-4 py-3 text-left">Date</th>
-                            <th class="px-4 py-3 text-left">Type</th>
-                            <th class="px-4 py-3 text-left">Description</th>
-                            <th class="px-4 py-3 text-right">Amount</th>
-                            <th class="px-4 py-3 text-left">Category</th>
-                            <th class="px-4 py-3 text-left">Payment</th>
+                            <th>date</th>
+                            <th>type</th>
+                            <th>description</th>
+                            <th>merchant</th>
+                            <th class="right">amount</th>
+                            <th>category</th>
+                            <th>payment method</th>
                         </tr>
                     </thead>
-                    <tbody id="transactions-table" class="divide-y divide-slate-700">
-                        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">Loading...</td></tr>
+                    <tbody id="transactions-table">
+                        <tr><td colspan="7" style="color:var(--text-muted); text-align:center; padding:24px;">loading...</td></tr>
                     </tbody>
                 </table>
             </div>
         </section>
 
-        <!-- Accounts Section -->
-        <section id="accounts-section" class="hidden space-y-4">
-            <h2 class="text-2xl font-bold">Payment Methods</h2>
-            <div id="accounts-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="text-slate-500">Loading...</div>
+        <!-- Payment Methods Section -->
+        <section id="accounts-section">
+            <div class="section-header">
+                <div class="section-title">payment-methods</div>
+                <div class="section-subtitle">balances across all payment instruments</div>
+            </div>
+            <div class="grid-3" id="accounts-grid">
+                <div class="pm-card" style="color:var(--text-muted);">loading...</div>
             </div>
         </section>
 
         <!-- Investments Section -->
-        <section id="investments-section" class="hidden space-y-4">
-            <h2 class="text-2xl font-bold">Investments</h2>
-            <div class="bg-slate-800 rounded-lg overflow-hidden">
-                <table class="w-full">
-                    <thead class="bg-slate-700">
+        <section id="investments-section">
+            <div class="section-header">
+                <div class="section-title">investments</div>
+                <div class="section-subtitle">portfolio holdings</div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
                         <tr>
-                            <th class="px-4 py-3 text-left">Symbol</th>
-                            <th class="px-4 py-3 text-left">Name</th>
-                            <th class="px-4 py-3 text-right">Quantity</th>
-                            <th class="px-4 py-3 text-right">Avg Cost</th>
-                            <th class="px-4 py-3 text-right">Current Price</th>
-                            <th class="px-4 py-3 text-right">Market Value</th>
+                            <th>symbol</th>
+                            <th>name</th>
+                            <th class="right">qty</th>
+                            <th class="right">avg cost</th>
+                            <th class="right">price</th>
+                            <th class="right">market value</th>
                         </tr>
                     </thead>
-                    <tbody id="holdings-table" class="divide-y divide-slate-700">
-                        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">Loading...</td></tr>
+                    <tbody id="holdings-table">
+                        <tr><td colspan="6" style="color:var(--text-muted); text-align:center; padding:24px;">loading...</td></tr>
                     </tbody>
                 </table>
             </div>
         </section>
 
-        <!-- Chat Section -->
-        <section id="chat-section" class="hidden flex flex-col h-full">
-            <h2 class="text-2xl font-bold mb-4">Chat with L.I.R.A.</h2>
-            
-            <!-- Session Plots -->
-            <div class="bg-slate-800 p-4 rounded-lg mb-4">
-                <div class="flex justify-between items-center mb-2">
-                    <h3 class="text-lg font-bold">Session Plots (Temporary)</h3>
-                    <button onclick="clearSessionPlots()" class="text-sm text-slate-400 hover:text-white">Clear</button>
-                </div>
-                <div id="session-plots" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="text-slate-500 text-sm">Ask "add a plot showing..." to create temporary plots</div>
-                </div>
+        <!-- Audit Log Section -->
+        <section id="audit-section">
+            <div class="section-header">
+                <div class="section-title">audit-log</div>
+                <div class="section-subtitle">history of all data mutations &mdash; click undo to revert</div>
             </div>
-
-            <!-- Chat Messages -->
-            <div id="chat-messages" class="flex-1 bg-slate-800 rounded-lg p-4 overflow-y-auto mb-4 space-y-4 min-h-[300px]">
-                <div class="text-slate-500 text-center">Start a conversation with L.I.R.A...</div>
-            </div>
-
-            <!-- Chat Input -->
-            <div class="flex gap-2">
-                <input type="text" id="chat-input" class="flex-1 bg-slate-700 px-4 py-3 rounded-lg" 
-                       placeholder="Ask L.I.R.A. anything..." onkeypress="handleChatKeypress(event)">
-                <button onclick="sendChat()" class="bg-cyan-600 px-6 py-3 rounded-lg hover:bg-cyan-700 transition">Send</button>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>id</th>
+                            <th>when</th>
+                            <th>operation</th>
+                            <th>table</th>
+                            <th>description</th>
+                            <th>action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="audit-table">
+                        <tr><td colspan="6" style="color:var(--text-muted); text-align:center; padding:24px;">loading...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </section>
+
     </main>
 
+    <!-- Chat FAB -->
+    <button id="chat-fab" onclick="toggleChat()">[L.I.R.A.]</button>
+
+    <!-- Chat Window -->
+    <div id="chat-window">
+        <div id="chat-resize-handle"></div>
+        <div class="chat-header">
+            <div class="chat-status">
+                <div class="status-dot" id="status-dot"></div>
+                <span class="chat-title">L.I.R.A.</span>
+            </div>
+            <div class="chat-actions">
+                <button class="chat-btn" onclick="toggleTrace()" id="trace-toggle-btn">[trace]</button>
+                <button class="chat-btn" onclick="restartChat()">[reset]</button>
+                <button class="chat-btn" onclick="toggleChat()">[x]</button>
+            </div>
+        </div>
+        <!-- Status bar: visible while server is busy -->
+        <div id="chat-status-bar">
+            <span class="spinner-char" id="spinner-char">⠋</span>
+            <span id="status-bar-text">processing...</span>
+        </div>
+        <div class="chat-body">
+            <div id="chat-messages"></div>
+            <div id="trace-panel">
+                <div class="trace-header">// trace</div>
+                <div id="trace-content"></div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <span class="input-prompt">&gt;</span>
+            <input type="text" id="chat-input" placeholder="ask lira... (/help for commands)" onkeydown="handleKeydown(event)">
+            <button class="send-btn" onclick="sendChat()">[send]</button>
+        </div>
+    </div>
+
     <script>
-        let currentSection = 'dashboard';
-        let chatHistory = [];
-        let sessionPlots = [];
-        let categoriesMap = {};
+    // ============================================================
+    // State
+    // ============================================================
+    let currentSection = 'dashboard';
+    let chatHistory = [];
+    let sessionPlots = [];
+    let traceEvents = [];
+    let showTrace = false;
+    let userCurrency = 'USD';
+    let pendingMutations = null; // stored pending tool calls for HITL
 
-        function showSection(section) {
-            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
-            document.getElementById(section + '-section').classList.remove('hidden');
-            currentSection = section;
+    // ============================================================
+    // Spinner
+    // ============================================================
+    const SPINNER_FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+    let _spinnerIdx = 0;
+    let _spinnerTimer = null;
 
-            if (section === 'dashboard') loadDashboard();
-            if (section === 'transactions') loadTransactions();
-            if (section === 'accounts') loadAccounts();
-            if (section === 'investments') loadInvestments();
-            if (section === 'chat') loadChatInit();
+    function startSpinner(msg) {
+        const bar = document.getElementById('chat-status-bar');
+        const txt = document.getElementById('status-bar-text');
+        const chr = document.getElementById('spinner-char');
+        const dot = document.getElementById('status-dot');
+        bar.classList.add('visible');
+        txt.textContent = msg || 'processing...';
+        dot.classList.add('thinking');
+        if (_spinnerTimer) return; // already running
+        _spinnerIdx = 0;
+        _spinnerTimer = setInterval(() => {
+            chr.textContent = SPINNER_FRAMES[_spinnerIdx % SPINNER_FRAMES.length];
+            _spinnerIdx++;
+        }, 80);
+    }
+
+    function stopSpinner() {
+        const bar = document.getElementById('chat-status-bar');
+        const dot = document.getElementById('status-dot');
+        bar.classList.remove('visible');
+        dot.classList.remove('thinking');
+        if (_spinnerTimer) { clearInterval(_spinnerTimer); _spinnerTimer = null; }
+    }
+
+    function updateSpinnerMsg(msg) {
+        const txt = document.getElementById('status-bar-text');
+        if (txt) txt.textContent = msg;
+    }
+
+    // ============================================================
+    // Chat panel resize
+    // ============================================================
+    (function() {
+        const handle = document.getElementById('chat-resize-handle');
+        const win = document.getElementById('chat-window');
+        let dragging = false;
+        let startX = 0;
+        let startW = 0;
+
+        handle.addEventListener('mousedown', (e) => {
+            dragging = true;
+            startX = e.clientX;
+            startW = win.offsetWidth;
+            handle.classList.add('dragging');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            const delta = startX - e.clientX; // moving left = wider
+            const newW = Math.max(300, Math.min(window.innerWidth - 240, startW + delta));
+            win.style.width = newW + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            handle.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        });
+    })();
+
+    // ============================================================
+    // Init
+    // ============================================================
+    document.getElementById('current-date').textContent = new Date().toISOString().split('T')[0];
+
+    async function init() {
+        try {
+            const s = await fetch('/api/dashboard/settings').then(r => r.json());
+            userCurrency = s.currency || 'USD';
+        } catch (e) {}
+        showSection('dashboard');
+    }
+
+    init();
+
+    // ============================================================
+    // Currency formatting
+    // ============================================================
+    function formatCurrency(amount) {
+        try {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: userCurrency,
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            }).format(amount || 0);
+        } catch (e) {
+            return (amount || 0).toFixed(2) + ' ' + userCurrency;
         }
+    }
 
-        function formatCurrency(amount) {
-            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
-        }
+    // ============================================================
+    // Navigation
+    // ============================================================
+    function showSection(sec) {
+        document.querySelectorAll('main > section').forEach(s => s.classList.remove('active'));
+        document.getElementById(sec + '-section').classList.add('active');
+        currentSection = sec;
 
-        async function loadCategories() {
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        const btn = document.getElementById('nav-' + sec);
+        if (btn) btn.classList.add('active');
+
+        if (sec === 'dashboard') loadDashboard();
+        else if (sec === 'transactions') loadTransactions();
+        else if (sec === 'accounts') loadAccounts();
+        else if (sec === 'investments') loadInvestments();
+        else if (sec === 'audit') loadAuditLog();
+    }
+
+    function refreshCurrentSection() {
+        showSection(currentSection);
+    }
+
+    // ============================================================
+    // Data loaders
+    // ============================================================
+    let categoriesMap = {};
+
+    async function loadCategories() {
+        try {
             const data = await fetch('/api/dashboard/categories').then(r => r.json());
             categoriesMap = {};
             for (const cat of data) {
                 categoriesMap[cat.id] = cat.name;
-                if (cat.subcategories) {
-                    for (const sub of cat.subcategories) {
-                        categoriesMap[sub.id] = `${cat.name} > ${sub.name}`;
-                    }
+                for (const sub of (cat.subcategories || [])) {
+                    categoriesMap[sub.id] = cat.name + ' > ' + sub.name;
                 }
             }
-        }
+        } catch (e) {}
+    }
 
-        async function loadDashboard() {
-            await loadCategories();
-            
+    async function loadDashboard() {
+        await loadCategories();
+
+        try {
             const summary = await fetch('/api/dashboard/summary').then(r => r.json());
             document.getElementById('summary-net-worth').textContent = formatCurrency(summary.net_worth);
             document.getElementById('summary-income').textContent = formatCurrency(summary.total_income);
             document.getElementById('summary-expenses').textContent = formatCurrency(summary.total_expenses);
-            document.getElementById('summary-payment-balance').textContent = formatCurrency(summary.payment_balance);
             document.getElementById('summary-investments').textContent = formatCurrency(summary.investments);
             document.getElementById('nav-net-worth').textContent = formatCurrency(summary.net_worth);
+        } catch (e) {}
 
+        try {
             const spendingData = await fetch('/api/dashboard/spending-by-category?months=12').then(r => r.json());
-            if (spendingData.length > 0) {
-                generatePlot('plot-category-spending', 'pie', 'Spending by Category', spendingData, 'category', 'amount');
-            }
+            if (spendingData.length > 0) renderPlot('plot-category-spending', 'pie', 'Spending by Category', spendingData, 'category', 'amount');
+            else document.getElementById('plot-category-spending').textContent = 'no data';
+        } catch (e) { document.getElementById('plot-category-spending').textContent = 'error'; }
 
+        try {
             const monthlyData = await fetch('/api/dashboard/monthly-spending?months=6').then(r => r.json());
-            if (monthlyData.length > 0) {
-                generatePlot('plot-monthly-spending', 'bar', 'Monthly Spending', monthlyData, 'month', 'amount');
-            }
+            if (monthlyData.length > 0) renderPlot('plot-monthly-spending', 'bar', 'Monthly Spending', monthlyData, 'month', 'amount');
+            else document.getElementById('plot-monthly-spending').textContent = 'no data';
+        } catch (e) { document.getElementById('plot-monthly-spending').textContent = 'error'; }
 
+        try {
             const nwData = await fetch('/api/dashboard/net-worth-history?months=4').then(r => r.json());
-            if (nwData.length > 0) {
-                generatePlot('plot-net-worth', 'line', 'Net Worth History', nwData, 'date', 'net_worth');
-            }
+            if (nwData.length > 0) renderPlot('plot-net-worth', 'line', 'Net Worth History', nwData, 'date', 'net_worth');
+            else document.getElementById('plot-net-worth').textContent = 'no data';
+        } catch (e) { document.getElementById('plot-net-worth').textContent = 'error'; }
 
-            loadPersistentPlots();
+        loadPersistentPlots();
+        renderSessionPlots();
+    }
+
+    async function renderPlot(containerId, plotType, title, data, xKey, yKey) {
+        try {
+            const r = await fetch('/api/plots/generate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({plot_type: plotType, title, data, x_key: xKey, y_key: yKey})
+            });
+            const result = await r.json();
+            const el = document.getElementById(containerId);
+            if (el) el.innerHTML = `<img src="${result.image}" style="max-width:100%;max-height:300px;object-fit:contain;">`;
+        } catch (e) {
+            const el = document.getElementById(containerId);
+            if (el) el.textContent = 'plot error';
         }
+    }
 
-        async function loadPersistentPlots() {
+    async function loadPersistentPlots() {
+        try {
             const plots = await fetch('/api/dashboard/plots').then(r => r.json());
             const container = document.getElementById('persistent-plots');
-            
             if (plots.length === 0) {
-                container.innerHTML = '<div class="text-slate-500">No persistent plots yet. Ask the chat to add one!</div>';
+                container.innerHTML = '<span style="color:var(--text-muted);">no persistent plots &mdash; ask L.I.R.A. to add one</span>';
                 return;
             }
-
             container.innerHTML = '';
+            container.style.display = 'block';
             for (const plot of plots) {
-                const data = await fetchPlotData(plot);
                 const div = document.createElement('div');
-                div.className = 'bg-slate-700 p-3 rounded';
-                div.innerHTML = `<h4 class="font-bold mb-2">${plot.title}</h4><div id="plot-p-${plot.id}" class="h-48"></div>`;
+                div.style.marginBottom = '12px';
+                div.innerHTML = `<div style="color:var(--text-dim);font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">${escapeHtml(plot.title)}</div><div id="pp-${plot.id}" style="min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);">loading...</div>`;
                 container.appendChild(div);
-                if (data.length > 0) {
-                    generatePlot(`plot-p-${plot.id}`, plot.plot_type, plot.title, data, plot.x_key, plot.y_key);
-                }
+                const data = await fetchPlotDataByTitle(plot.title);
+                if (data && data.length > 0) renderPlot(`pp-${plot.id}`, plot.plot_type, plot.title, data, plot.x_key, plot.y_key);
+                else document.getElementById(`pp-${plot.id}`).textContent = 'no data';
             }
-        }
+        } catch (e) {}
+    }
 
-        async function fetchPlotData(plot) {
-            const title = plot.title.toLowerCase();
-            if (title.includes('category')) {
-                return await fetch('/api/dashboard/spending-by-category?months=12').then(r => r.json());
-            }
-            if (title.includes('monthly')) {
-                return await fetch('/api/dashboard/monthly-spending?months=6').then(r => r.json());
-            }
-            if (title.includes('net worth') || title.includes('nw')) {
-                return await fetch('/api/dashboard/net-worth-history?months=4').then(r => r.json());
-            }
-            return [];
-        }
+    async function fetchPlotDataByTitle(title) {
+        const t = title.toLowerCase();
+        if (t.includes('category')) return await fetch('/api/dashboard/spending-by-category?months=12').then(r => r.json()).catch(() => []);
+        if (t.includes('monthly')) return await fetch('/api/dashboard/monthly-spending?months=6').then(r => r.json()).catch(() => []);
+        if (t.includes('net worth') || t.includes('nw')) return await fetch('/api/dashboard/net-worth-history?months=4').then(r => r.json()).catch(() => []);
+        return [];
+    }
 
-        async function generatePlot(containerId, plotType, title, data, xKey, yKey) {
-            try {
-                const response = await fetch('/api/plots/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ plot_type: plotType, title, data, x_key: xKey, y_key: yKey })
-                });
-                const result = await response.json();
-                document.getElementById(containerId).innerHTML = `<img src="${result.image}" class="w-full h-full object-contain">`;
-            } catch (e) {
-                document.getElementById(containerId).textContent = 'Error generating plot';
-            }
-        }
+    async function loadTransactions() {
+        await loadCategories();
+        const type = document.getElementById('filter-type').value;
+        const start = document.getElementById('filter-start').value;
+        const end = document.getElementById('filter-end').value;
 
-        async function loadTransactions() {
-            const type = document.getElementById('filter-type').value;
-            const start = document.getElementById('filter-start').value;
-            const end = document.getElementById('filter-end').value;
-            
-            let url = '/api/dashboard/transactions?limit=50';
-            if (type) url += `&transaction_type=${type}`;
-            if (start) url += `&start_date=${start}`;
-            if (end) url += `&end_date=${end}`;
+        let url = '/api/dashboard/transactions?limit=100';
+        if (type) url += `&transaction_type=${type}`;
+        if (start) url += `&start_date=${start}`;
+        if (end) url += `&end_date=${end}`;
 
+        const tbody = document.getElementById('transactions-table');
+        tbody.innerHTML = `<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:24px;">loading...</td></tr>`;
+
+        try {
             const data = await fetch(url).then(r => r.json());
-            const tbody = document.getElementById('transactions-table');
-            
-            if (data.transactions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No transactions found</td></tr>';
+            if (!data.transactions || data.transactions.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:24px;">no transactions found</td></tr>`;
                 return;
             }
-
-            tbody.innerHTML = data.transactions.map(t => `
-                <tr class="hover:bg-slate-700">
-                    <td class="px-4 py-3">${t.date.split('T')[0]}</td>
-                    <td class="px-4 py-3"><span class="px-2 py-1 rounded text-sm ${t.type === 'expense' ? 'bg-red-900 text-red-300' : t.type === 'income' ? 'bg-green-900 text-green-300' : 'bg-blue-900 text-blue-300'}">${t.type}</span></td>
-                    <td class="px-4 py-3">${t.description || '-'}</td>
-                    <td class="px-4 py-3 text-right ${t.type === 'expense' ? 'text-red-400' : 'text-green-400'}">${formatCurrency(t.amount)}</td>
-                    <td class="px-4 py-3">${t.category_id ? (categoriesMap[t.category_id] || t.category_id) : '-'}</td>
-                    <td class="px-4 py-3">${t.payment_method_id || '-'}</td>
-                </tr>
-            `).join('');
+            tbody.innerHTML = data.transactions.map(t => {
+                const typeClass = t.type === 'expense' ? 'badge-expense' : t.type === 'income' ? 'badge-income' : 'badge-transfer';
+                const amtClass = t.type === 'expense' ? 'td-red' : 'td-green';
+                const prefix = t.type === 'expense' ? '−' : t.type === 'income' ? '+' : '';
+                return `<tr>
+                    <td class="td-dim">${t.date.split('T')[0]}</td>
+                    <td><span class="badge ${typeClass}">${t.type}</span></td>
+                    <td>${escapeHtml(t.description || '-')}</td>
+                    <td class="td-dim">${escapeHtml(t.merchant || '-')}</td>
+                    <td class="right ${amtClass}">${prefix}${formatCurrency(Math.abs(t.amount))}</td>
+                    <td class="td-dim">${escapeHtml(t.category_name || '-')}</td>
+                    <td class="td-dim">${escapeHtml(t.payment_method_name || '-')}</td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="7" style="color:var(--red);text-align:center;padding:24px;">error loading transactions</td></tr>`;
         }
+    }
 
-        async function loadAccounts() {
+    async function loadAccounts() {
+        try {
             const data = await fetch('/api/dashboard/payment-methods').then(r => r.json());
             const grid = document.getElementById('accounts-grid');
-            
-            if (data.length === 0) {
-                grid.innerHTML = '<div class="text-slate-500">No payment methods found</div>';
+            if (!data.length) {
+                grid.innerHTML = `<div class="pm-card" style="color:var(--text-muted);">no payment methods</div>`;
                 return;
             }
-
             grid.innerHTML = data.map(pm => `
-                <div class="bg-slate-800 p-4 rounded-lg">
-                    <div class="text-slate-400 text-sm">${pm.name}${pm.is_default ? ' (Default)' : ''}</div>
-                    <div class="text-2xl font-bold text-purple-400">${formatCurrency(pm.balance)}</div>
+                <div class="pm-card">
+                    <div class="pm-name">
+                        <span>${escapeHtml(pm.name)}</span>
+                        ${pm.is_default ? '<span class="badge badge-default">default</span>' : ''}
+                    </div>
+                    <div class="pm-balance">${formatCurrency(pm.balance)}</div>
                 </div>
             `).join('');
-        }
+        } catch (e) {}
+    }
 
-        async function loadInvestments() {
+    async function loadInvestments() {
+        try {
             const data = await fetch('/api/dashboard/holdings').then(r => r.json());
             const tbody = document.getElementById('holdings-table');
-            
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No holdings found</td></tr>';
+            if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:24px;">no holdings</td></tr>`;
                 return;
             }
-
             tbody.innerHTML = data.map(h => `
-                <tr class="hover:bg-slate-700">
-                    <td class="px-4 py-3 font-bold">${h.symbol}</td>
-                    <td class="px-4 py-3">${h.name || '-'}</td>
-                    <td class="px-4 py-3 text-right">${h.quantity}</td>
-                    <td class="px-4 py-3 text-right">${formatCurrency(h.average_cost)}</td>
-                    <td class="px-4 py-3 text-right">${h.current_price ? formatCurrency(h.current_price) : '-'}</td>
-                    <td class="px-4 py-3 text-right text-yellow-400">${formatCurrency(h.market_value)}</td>
+                <tr>
+                    <td class="td-green" style="font-weight:700;">${escapeHtml(h.symbol)}</td>
+                    <td class="td-dim">${escapeHtml(h.name || '-')}</td>
+                    <td class="right">${h.quantity}</td>
+                    <td class="right td-dim">${formatCurrency(h.average_cost)}</td>
+                    <td class="right">${h.current_price ? formatCurrency(h.current_price) : '-'}</td>
+                    <td class="right td-amber" style="font-weight:700;">${formatCurrency(h.market_value)}</td>
                 </tr>
             `).join('');
+        } catch (e) {}
+    }
+
+    async function loadAuditLog() {
+        const tbody = document.getElementById('audit-table');
+        tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:24px;">loading...</td></tr>`;
+        try {
+            const data = await fetch('/api/dashboard/audit-log?limit=100').then(r => r.json());
+            if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:24px;">no audit entries yet</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = data.map(e => {
+                const opClass = e.operation === 'create' ? 'td-green' : e.operation === 'delete' ? 'td-red' : 'td-amber';
+                return `<tr>
+                    <td class="td-dim">#${e.id}</td>
+                    <td class="td-dim">${e.created_at.split('T')[0]}</td>
+                    <td class="${opClass}">${e.operation}</td>
+                    <td class="td-dim">${escapeHtml(e.table_name)}</td>
+                    <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(e.description || '')}">${escapeHtml(e.description || '-')}</td>
+                    <td><button class="undo-btn" onclick="undoEntry(${e.id})">[undo]</button></td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red);text-align:center;padding:24px;">error loading audit log</td></tr>`;
+        }
+    }
+
+    async function undoEntry(id) {
+        if (!confirm(`Undo audit entry #${id}? This will revert the change.`)) return;
+        try {
+            const r = await fetch(`/api/dashboard/audit-log/${id}/undo`, {method:'POST'});
+            if (!r.ok) throw new Error(await r.text());
+            addSystemMsg(`Undone audit entry #${id}`);
+            loadAuditLog();
+            refreshCurrentSection();
+        } catch (e) {
+            addSystemMsg(`Undo failed: ${e.message}`);
+        }
+    }
+
+    // ============================================================
+    // Chat Widget
+    // ============================================================
+    function toggleChat() {
+        const win = document.getElementById('chat-window');
+        const fab = document.getElementById('chat-fab');
+        if (win.classList.contains('open')) {
+            win.classList.remove('open');
+            fab.style.display = 'block';
+        } else {
+            win.classList.add('open');
+            fab.style.display = 'none';
+            if (chatHistory.length === 0) loadChatInit();
+            setTimeout(() => document.getElementById('chat-input').focus(), 50);
+        }
+    }
+
+    function toggleTrace() {
+        showTrace = !showTrace;
+        const panel = document.getElementById('trace-panel');
+        const btn = document.getElementById('trace-toggle-btn');
+        if (showTrace) {
+            panel.classList.add('open');
+            btn.style.color = 'var(--green)';
+            btn.style.borderColor = 'var(--green)';
+        } else {
+            panel.classList.remove('open');
+            btn.style.color = '';
+            btn.style.borderColor = '';
+        }
+        renderTrace();
+    }
+
+    function restartChat() {
+        chatHistory = [];
+        traceEvents = [];
+        pendingMutations = null;
+        document.getElementById('chat-messages').innerHTML = '';
+        sessionPlots = [];
+        loadChatInit();
+        renderTrace();
+    }
+
+    async function loadChatInit() {
+        try {
+            const summary = await fetch('/api/dashboard/summary').then(r => r.json());
+            addMsg('assistant',
+                `L.I.R.A. online. Net worth: **${formatCurrency(summary.net_worth)}**\n\n` +
+                `Commands: add transactions, view balances, generate plots, transfer funds.\n` +
+                `Type /help for slash commands.`
+            );
+        } catch (e) {
+            addMsg('assistant', 'L.I.R.A. online. Ask me anything about your finances.');
+        }
+    }
+
+    function handleKeydown(event) {
+        if (event.key === 'Enter') sendChat();
+    }
+
+    function handleSlashCommand(cmd) {
+        const c = cmd.toLowerCase().trim();
+        if (c === '/trace' || c === '/t') { toggleTrace(); return true; }
+        if (c === '/reset' || c === '/new') { restartChat(); return true; }
+        if (c === '/clear' || c === '/c') {
+            document.getElementById('chat-messages').innerHTML = '';
+            return true;
+        }
+        if (c === '/help' || c === '/h') {
+            addMsg('assistant', `/trace — toggle trace panel\n/reset — clear session\n/clear — clear messages\n/audit — go to audit log`);
+            return true;
+        }
+        if (c === '/audit') { showSection('audit'); return true; }
+        addMsg('assistant', `unknown command: ${cmd}`);
+        return true;
+    }
+
+    async function sendChat() {
+        const input = document.getElementById('chat-input');
+        const msg = input.value.trim();
+        if (!msg) return;
+        input.value = '';
+
+        if (msg.startsWith('/')) {
+            handleSlashCommand(msg);
+            return;
         }
 
-        async function loadChatInit() {
-            if (chatHistory.length > 0) return;
-            
-            const init = await fetch('/api/dashboard/summary').then(r => r.json());
-            addMessage('assistant', `Hello! I can help you manage your finances. Your current net worth is ${formatCurrency(init.net_worth)}. 
+        addMsg('user', msg);
+        chatHistory.push({role: 'user', content: msg});
 
-I can help you with:
-- Adding transactions and categorizing them
-- Transferring between payment methods
-- Creating plots (say "add a plot showing spending by category")
-- And much more!
+        // Show typing indicator + spinner
+        startSpinner('thinking...');
+        const typingId = 'typing-' + Date.now();
+        addTypingIndicator(typingId);
 
-What would you like to do?`);
-        }
+        traceEvents = [];
 
-        function handleChatKeypress(event) {
-            if (event.key === 'Enter') sendChat();
-        }
+        try {
+            const resp = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({messages: chatHistory, stream: true})
+            });
 
-        async function sendChat() {
-            const input = document.getElementById('chat-input');
-            const message = input.value.trim();
-            if (!message) return;
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
 
-            addMessage('user', message);
-            chatHistory.push({ role: 'user', content: message });
-            input.value = '';
-            
-            // Create a streaming message container
-            const messages = document.getElementById('chat-messages');
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'chat-message assistant-message bg-slate-700 p-3 rounded-lg';
-            const contentDiv = document.createElement('div');
-            const typingDiv = document.createElement('div');
-            typingDiv.className = 'typing-indicator';
-            typingDiv.innerHTML = '<span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse mr-1"></span><span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse mr-1"></span><span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse"></span>';
-            contentDiv.appendChild(typingDiv);
-            msgDiv.appendChild(contentDiv);
-            messages.appendChild(msgDiv);
-            messages.scrollTop = messages.scrollHeight;
+            removeTypingIndicator(typingId);
+            const msgEl = createStreamingMsg();
 
             let fullContent = '';
-            let traceEvents = [];
+            let mutationPreview = null;
+            let lineBuffer = '';   // accumulates partial lines across chunks
 
-            try {
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        messages: chatHistory,
-                        stream: true
-                    })
-                });
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-
-                // Remove typing indicator
-                if (typingDiv) typingDiv.remove();
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    const chunk = decoder.decode(value);
-                    const lines = chunk.split('\n').filter(line => line.trim());
-                    
-                    for (const line of lines) {
-                        try {
-                            const event = JSON.parse(line);
-                            traceEvents.push(event);
-                            
-                            if (event.kind === 'llm_token' && event.content) {
-                                fullContent += event.content;
-                                contentDiv.innerHTML = escapeHtml(fullContent);
-                                messages.scrollTop = messages.scrollHeight;
-                            } else if (event.kind === 'status') {
-                                // Could show status updates
-                            }
-                        } catch (e) {
-                            // Skip malformed JSON
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+                lineBuffer += decoder.decode(value, {stream: true});
+                const lines = lineBuffer.split('\n');
+                lineBuffer = lines.pop(); // keep last (possibly incomplete) fragment
+                for (const line of lines.filter(l => l.trim())) {
+                    try {
+                        const ev = JSON.parse(line);
+                        handleStreamEvent(ev, msgEl, (content) => {
+                            fullContent += content;
+                        });
+                        if (ev.kind === 'mutation_preview') {
+                            mutationPreview = ev.payload;
                         }
-                    }
-                }
-
-                // Add trace panel if there are events
-                let traceHtml = '';
-                if (traceEvents.length > 0) {
-                    traceHtml = '<div class="mt-2 p-2 bg-slate-900 rounded text-xs font-mono overflow-x-auto max-h-40">';
-                    for (const event of traceEvents) {
-                        if (event.kind === 'status' && event.content) {
-                            traceHtml += `<div class="text-yellow-500">${escapeHtml(event.content)}</div>`;
-                        } else if (event.kind === 'tool_call' && event.payload) {
-                            const args = JSON.stringify(event.payload.arguments || {}).substring(0, 100);
-                            traceHtml += `<div class="text-cyan-400">tool&gt; ${event.payload.name}(${args})</div>`;
-                        } else if (event.kind === 'tool_result' && event.payload) {
-                            const status = event.payload.success ? '<span class="text-green-400">ok</span>' : '<span class="text-red-400">error</span>';
-                            const preview = JSON.stringify(event.payload.data || event.payload.error || {}).substring(0, 80);
-                            traceHtml += `<div class="text-cyan-400">tool&lt; ${event.payload.name} [${status}] ${preview}</div>`;
-                        }
-                    }
-                    traceHtml += '</div>';
-                    contentDiv.innerHTML = escapeHtml(fullContent) + traceHtml;
-                }
-
-                chatHistory.push({ role: 'assistant', content: fullContent });
-
-                const responseText = fullContent.toLowerCase();
-                if (responseText.includes('persistent') || responseText.includes('dashboard')) {
-                    loadPersistentPlots();
-                }
-                
-                if (responseText.includes('plot') && responseText.includes('session')) {
-                    loadSessionPlots(message);
-                }
-
-                refreshCurrentSection();
-            } catch (e) {
-                if (typingDiv) typingDiv.remove();
-                contentDiv.innerHTML = `<div class="text-red-400">Error: ${escapeHtml(e.message)}</div>`;
-            }
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML.replace(/\n/g, '<br>');
-        }
-
-        async function loadSessionPlots(prompt) {
-            const plots = await fetch('/api/dashboard/plots').then(r => r.json());
-            if (plots.length > 0) {
-                const container = document.getElementById('session-plots');
-                container.innerHTML = '';
-                for (const plot of plots.slice(0, 2)) {
-                    const data = await fetchPlotData(plot);
-                    if (data.length > 0) {
-                        const div = document.createElement('div');
-                        div.className = 'bg-slate-700 p-3 rounded';
-                        div.innerHTML = `<h4 class="font-bold mb-2">${plot.title}</h4><div id="session-plot-${plot.id}" class="h-48"></div>`;
-                        container.appendChild(div);
-                        generatePlot(`session-plot-${plot.id}`, plot.plot_type, plot.title, data, plot.x_key, plot.y_key);
-                    }
+                    } catch (e) {}
                 }
             }
-        }
+            // flush any final buffered line
+            if (lineBuffer.trim()) {
+                try {
+                    const ev = JSON.parse(lineBuffer);
+                    handleStreamEvent(ev, msgEl, (content) => { fullContent += content; });
+                    if (ev.kind === 'mutation_preview') mutationPreview = ev.payload;
+                } catch (e) {}
+            }
 
-        function clearSessionPlots() {
-            document.getElementById('session-plots').innerHTML = '<div class="text-slate-500 text-sm">Ask "add a plot showing..." to create temporary plots</div>';
-        }
+            // Finalize message
+            if (fullContent) {
+                msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(fullContent);
+                chatHistory.push({role: 'assistant', content: fullContent});
+            }
 
-        function refreshCurrentSection() {
-            if (currentSection === 'dashboard') loadDashboard();
-            if (currentSection === 'transactions') loadTransactions();
-            if (currentSection === 'accounts') loadAccounts();
-            if (currentSection === 'investments') loadInvestments();
-        }
-
-        function addMessage(role, content, isLoading = false) {
-            const container = document.getElementById('chat-messages');
-            const div = document.createElement('div');
-            
-            if (isLoading) {
-                div.className = `chat-message ${role === 'user' ? 'user-message' : 'assistant-message'} typing-indicator bg-slate-700 p-3 rounded-lg`;
-                div.innerHTML = '<span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse mr-1"></span><span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse mr-1"></span><span class="inline-block w-2 h-2 bg-slate-400 rounded-full animate-pulse"></span>';
+            // Show HITL diff card if there are pending mutations
+            if (mutationPreview && mutationPreview.pending_calls && mutationPreview.pending_calls.length > 0) {
+                pendingMutations = mutationPreview.pending_calls;
+                showDiffCard(mutationPreview);
             } else {
-                div.className = `chat-message ${role === 'user' ? 'user-message' : 'assistant-message'} ${role === 'user' ? 'bg-cyan-700' : 'bg-slate-700'} p-3 rounded-lg`;
-                div.innerHTML = `<div class="text-sm text-slate-400 mb-1">${role === 'user' ? 'You' : 'L.I.R.A.'}</div><div>${content}</div>`;
+                pendingMutations = null;
             }
-            
-            container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
+
+            stopSpinner();
+            if (showTrace) renderTrace();
+
+            // Refresh data if we're on a relevant section
+            if (!mutationPreview) {
+                refreshCurrentSection();
+            }
+
+        } catch (e) {
+            removeTypingIndicator(typingId);
+            stopSpinner();
+            addMsg('assistant', `error: ${e.message}`);
+        }
+    }
+
+    function handleStreamEvent(ev, msgEl, onToken) {
+        if (ev.kind === 'llm_token' && ev.content) {
+            onToken(ev.content);
+            // Live update the message element (as text for now)
+            const current = msgEl._raw || '';
+            msgEl._raw = current + ev.content;
+            msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(msgEl._raw);
+            document.getElementById('chat-messages').scrollTop = 99999;
+        } else if (ev.kind === 'status') {
+            updateSpinnerMsg(ev.content || 'processing...');
+            traceEvents.push(ev);
+        } else if (ev.kind === 'tool_call') {
+            traceEvents.push(ev);
+            if (ev.payload && ev.payload.name === 'generate_plot') {
+                // will be captured in tool_result
+            }
+        } else if (ev.kind === 'tool_result') {
+            traceEvents.push(ev);
+            if (ev.payload && ev.payload.name === 'generate_plot' && ev.payload.data && ev.payload.data.image_base64) {
+                sessionPlots.push({
+                    id: Date.now(),
+                    title: ev.payload.data.title || 'Plot',
+                    image_base64: ev.payload.data.image_base64
+                });
+                if (currentSection === 'dashboard') renderSessionPlots();
+            }
+        } else if (ev.kind === 'mutation_preview') {
+            traceEvents.push(ev);
+        }
+    }
+
+    function createStreamingMsg() {
+        const container = document.getElementById('chat-messages');
+        const el = document.createElement('div');
+        el.className = 'msg-assistant';
+        el._raw = '';
+        container.appendChild(el);
+        container.scrollTop = 99999;
+        return el;
+    }
+
+    function addMsg(role, content) {
+        const container = document.getElementById('chat-messages');
+        const el = document.createElement('div');
+        if (role === 'user') {
+            el.className = 'msg-user';
+            el.textContent = content;
+        } else if (role === 'system') {
+            el.className = 'msg-system';
+            el.textContent = content;
+        } else {
+            el.className = 'msg-assistant';
+            el.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(content);
+        }
+        container.appendChild(el);
+        container.scrollTop = 99999;
+        return el;
+    }
+
+    function addSystemMsg(text) {
+        addMsg('system', text);
+    }
+
+    function addTypingIndicator(id) {
+        const container = document.getElementById('chat-messages');
+        const el = document.createElement('div');
+        el.id = id;
+        el.className = 'msg-assistant';
+        el.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+        container.appendChild(el);
+        container.scrollTop = 99999;
+    }
+
+    function removeTypingIndicator(id) {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+    }
+
+    // ============================================================
+    // HITL diff card
+    // ============================================================
+    function showDiffCard(preview) {
+        const container = document.getElementById('chat-messages');
+        const card = document.createElement('div');
+        card.className = 'diff-card';
+        card.id = 'diff-card-' + Date.now();
+
+        let itemsHtml = '';
+        for (const p of (preview.previews || [])) {
+            const beforeStr = p.before != null ? JSON.stringify(p.before, null, 0) : null;
+            const afterStr = p.after != null ? JSON.stringify(p.after, null, 0) : null;
+            itemsHtml += `<div class="diff-item">
+                <div class="diff-item-title">⚡ ${escapeHtml(p.description || p.tool)}</div>
+                ${beforeStr != null ? `<div class="diff-row"><span class="diff-label">before</span><span class="diff-before">${escapeHtml(beforeStr)}</span></div>` : ''}
+                ${afterStr != null ? `<div class="diff-row"><span class="diff-label">after</span><span class="diff-after">${escapeHtml(afterStr)}</span></div>` : ''}
+            </div>`;
         }
 
-        showSection('dashboard');
+        const cardId = card.id;
+        card.innerHTML = `
+            <div class="diff-card-header">proposed changes</div>
+            ${itemsHtml}
+            <div class="diff-actions">
+                <button class="btn-confirm" onclick="confirmMutations('${cardId}')">[ confirm ]</button>
+                <button class="btn-cancel" onclick="cancelMutations('${cardId}')">[ cancel ]</button>
+            </div>
+        `;
+        container.appendChild(card);
+        container.scrollTop = 99999;
+    }
+
+    async function confirmMutations(cardId) {
+        if (!pendingMutations || !pendingMutations.length) return;
+        const card = document.getElementById(cardId);
+        if (card) card.remove();
+
+        startSpinner('applying changes...');
+
+        try {
+            const resp = await fetch('/api/chat/confirm', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({pending_tool_calls: pendingMutations, stream: true})
+            });
+
+            if (!resp.ok) {
+                const errText = await resp.text();
+                throw new Error(`server error ${resp.status}: ${errText}`);
+            }
+
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            const msgEl = createStreamingMsg();
+            let fullContent = '';
+            let lineBuffer2 = '';
+
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+                lineBuffer2 += decoder.decode(value, {stream: true});
+                const lines = lineBuffer2.split('\n');
+                lineBuffer2 = lines.pop();
+                for (const line of lines.filter(l => l.trim())) {
+                    try {
+                        const ev = JSON.parse(line);
+                        if (ev.kind === 'status') updateSpinnerMsg(ev.content || 'applying...');
+                        handleStreamEvent(ev, msgEl, c => { fullContent += c; });
+                    } catch (e) {}
+                }
+            }
+            if (lineBuffer2.trim()) {
+                try {
+                    const ev = JSON.parse(lineBuffer2);
+                    if (ev.kind === 'status') updateSpinnerMsg(ev.content || 'applying...');
+                    handleStreamEvent(ev, msgEl, c => { fullContent += c; });
+                } catch (e) {}
+            }
+
+            if (fullContent) {
+                msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(fullContent);
+                chatHistory.push({role: 'assistant', content: fullContent});
+            } else if (!msgEl._raw) {
+                // No text content streamed — show a generic success note
+                msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span><span style="color:var(--green);">changes applied.</span>';
+            }
+
+            pendingMutations = null;
+            stopSpinner();
+            if (showTrace) renderTrace();
+            refreshCurrentSection();
+
+        } catch (e) {
+            stopSpinner();
+            addMsg('assistant', `error confirming: ${e.message}`);
+        }
+    }
+
+    function cancelMutations(cardId) {
+        const card = document.getElementById(cardId);
+        if (card) card.remove();
+        pendingMutations = null;
+        addSystemMsg('changes cancelled');
+        chatHistory.push({role: 'assistant', content: 'Changes cancelled.'});
+    }
+
+    // ============================================================
+    // Trace panel
+    // ============================================================
+    function renderTrace() {
+        const container = document.getElementById('trace-content');
+        if (!container) return;
+        if (!traceEvents.length) {
+            container.innerHTML = '<span style="color:var(--text-muted)">// no trace events</span>';
+            return;
+        }
+        let html = '';
+        for (const ev of traceEvents) {
+            if (ev.kind === 'status') {
+                html += `<div class="trace-status">state&gt; ${escapeHtml(ev.content)}</div>`;
+            } else if (ev.kind === 'tool_call' && ev.payload) {
+                const args = JSON.stringify(ev.payload.arguments || {}).substring(0, 80);
+                html += `<div class="trace-call">⚡ ${escapeHtml(ev.payload.name)}(${escapeHtml(args)})</div>`;
+            } else if (ev.kind === 'tool_result' && ev.payload) {
+                const statusClass = ev.payload.success ? 'trace-ok' : 'trace-err';
+                const status = ev.payload.success ? 'ok' : 'err';
+                html += `<div class="${statusClass}">↳ ${escapeHtml(ev.payload.name)} [${status}]</div>`;
+            } else if (ev.kind === 'mutation_preview') {
+                html += `<div style="color:var(--amber);">⚠ mutation preview</div>`;
+            }
+        }
+        container.innerHTML = html;
+        container.scrollTop = 99999;
+    }
+
+    // ============================================================
+    // Session plots
+    // ============================================================
+    function renderSessionPlots() {
+        const container = document.getElementById('session-plots-container');
+        if (!container) return;
+        if (!sessionPlots.length) {
+            container.innerHTML = '<span style="color:var(--text-muted);">plots from this session will appear here</span>';
+            container.style.display = 'flex';
+            return;
+        }
+        container.style.display = 'block';
+        container.innerHTML = '';
+        for (const plot of sessionPlots) {
+            const div = document.createElement('div');
+            div.style.marginBottom = '12px';
+            div.innerHTML = `<div style="color:var(--text-dim);font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">${escapeHtml(plot.title)}</div>
+                <img src="data:image/png;base64,${plot.image_base64}" style="max-width:100%;max-height:200px;object-fit:contain;">`;
+            container.appendChild(div);
+        }
+    }
+
+    // ============================================================
+    // Markdown formatter
+    // ============================================================
+    function formatMarkdown(text) {
+        if (!text) return '';
+        let h = escapeHtml(text);
+
+        h = h.replace(/^### (.+)$/gm, '<h3 style="color:var(--green);margin:4px 0;">$1</h3>');
+        h = h.replace(/^## (.+)$/gm,  '<h2 style="color:var(--green);margin:4px 0;">$1</h2>');
+        h = h.replace(/^# (.+)$/gm,   '<h1 style="color:var(--green);margin:4px 0;">$1</h1>');
+        h = h.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--green);">$1</strong>');
+        h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        h = h.replace(/`([^`]+)`/g, '<code style="background:var(--bg);border:1px solid var(--border2);padding:1px 4px;color:var(--cyan);font-family:var(--mono);">$1</code>');
+        h = h.replace(/```[\w]*\n([\s\S]*?)```/g, '<pre style="background:var(--bg);border:1px solid var(--border2);padding:8px;overflow-x:auto;margin:4px 0;font-size:11px;"><code style="color:var(--text);">$1</code></pre>');
+        h = h.replace(/^[-*] (.+)$/gm, '<li style="margin-left:14px;color:var(--text);">$1</li>');
+        h = h.replace(/\n\n/g, '<br><br>');
+        h = h.replace(/\n/g, '<br>');
+        return h;
+    }
+
+    function escapeHtml(text) {
+        if (text == null) return '';
+        const d = document.createElement('div');
+        d.textContent = String(text);
+        return d.innerHTML;
+    }
     </script>
 </body>
 </html>

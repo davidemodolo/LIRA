@@ -35,16 +35,20 @@ async def test_list_accounts(session, sample_account):
 
 
 @pytest.mark.asyncio
-async def test_create_transaction(session, sample_account):
+async def test_create_transaction(session, sample_account, sample_category, sample_payment_method):
     result = await tools.create_transaction(
         account_id=sample_account.id,
+        category_id=sample_category.id,
+        secondary_category_id=sample_category.id,
+        payment_method_id=sample_payment_method.id,
         transaction_type="expense",
-        amount=-12.34,
+        amount=12.34,
         description="Coffee",
+        merchant="Starbucks",
     )
 
     assert "id" in result
-    assert result["amount"] == -12.34
+    assert result["amount"] == 12.34
 
 
 @pytest.mark.asyncio

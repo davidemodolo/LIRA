@@ -9,7 +9,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from lira.db.models import Category, PaymentMethod, Settings
+from lira.db.models import Account, AccountType, Category, PaymentMethod, Settings
 from lira.db.session import DatabaseSession, init_database
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ def check_initialization_needed() -> dict[str, Any]:
     """Check what needs to be initialized.
 
     Returns:
-        Dict with flags for currency, payment_methods, categories
+        Dict with flags for currency, payment_methods, categories, accounts
     """
     init_database()
 
@@ -70,11 +70,13 @@ def check_initialization_needed() -> dict[str, Any]:
 
         payment_methods = session.execute(select(PaymentMethod)).scalars().all()
         categories = session.execute(select(Category)).scalars().all()
+        accounts = session.execute(select(Account)).scalars().all()
 
     return {
         "currency_needed": currency is None,
         "payment_methods_needed": len(payment_methods) == 0,
         "categories_needed": len(categories) == 0,
+        "accounts_needed": len(accounts) == 0,
     }
 
 
@@ -300,6 +302,7 @@ def initialize_first_run(currency: str, payment_methods: list[tuple[str, float]]
         currency: Currency code
         payment_methods: List of (name, balance) tuples
     """
+    create_default_account()
     set_currency(currency)
 
     for i, (pm_name, balance) in enumerate(payment_methods):
@@ -308,6 +311,26 @@ def initialize_first_run(currency: str, payment_methods: list[tuple[str, float]]
     initialize_default_categories()
 
     logger.info("First-run initialization complete")
+
+
+def create_default_account() -> Account:
+    """Create a default Personal account if none exists."""
+    init_database()
+
+    with DatabaseSession() as session:
+        existing = session.execute(select(Account)).scalars().first()
+        if existing:
+            return existing
+
+        account = Account(
+            name="Personal",
+            account_type=AccountType.CHECKING,
+            balance=Decimal("0"),
+        )
+        session.add(account)
+        session.flush()
+        logger.info("Created default Personal account")
+        return account
 
 
 def create_payment_method(

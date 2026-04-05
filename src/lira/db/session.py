@@ -120,6 +120,51 @@ def create_tables() -> None:
 
     Base.metadata.create_all(bind=_engine)
     logger.info("Database tables created")
+    ensure_default_account()
+    ensure_default_payment_method()
+
+
+def ensure_default_account() -> None:
+    """Ensure a default account exists for new databases.
+
+    Creates a 'Personal' checking account if none exists.
+    This ensures all transactions, categories, and investments are tied to an account.
+    """
+    from decimal import Decimal
+
+    from lira.db.models import Account, AccountType
+
+    with DatabaseSession() as session:
+        if session.query(Account).first() is None:
+            default_account = Account(
+                name="Personal",
+                account_type=AccountType.CHECKING,
+                balance=Decimal("0"),
+                currency="USD",
+            )
+            session.add(default_account)
+            logger.info("Created default 'Personal' account")
+
+
+def ensure_default_payment_method() -> None:
+    """Ensure a default payment method exists if none exist."""
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from lira.db.models import Account, PaymentMethod
+
+    with DatabaseSession() as session:
+        if session.query(PaymentMethod).first() is None:
+            account = session.execute(select(Account)).scalar_one_or_none()
+            default_pm = PaymentMethod(
+                name="Cash",
+                balance=Decimal("0"),
+                is_default=True,
+                account_id=account.id if account else None,
+            )
+            session.add(default_pm)
+            logger.info("Created default 'Cash' payment method")
 
 
 def drop_tables() -> None:

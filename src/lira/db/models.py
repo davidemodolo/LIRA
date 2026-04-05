@@ -184,20 +184,18 @@ class Transaction(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=False)
-    category_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("categories.id"), nullable=True
+    category_id: Mapped[int] = mapped_column(Integer, ForeignKey("categories.id"), nullable=False)
+    secondary_category_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("categories.id"), nullable=False
     )
-    secondary_category_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("categories.id"), nullable=True
-    )
-    payment_method_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("payment_methods.id"), nullable=True
+    payment_method_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("payment_methods.id"), nullable=False
     )
     transaction_type: Mapped[TransactionType] = mapped_column(Enum(TransactionType), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
-    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    merchant: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    merchant: Mapped[str] = mapped_column(String(255), nullable=False)
     date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     is_reconciled: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -388,6 +386,32 @@ class DashboardPlot(Base):
     y_key: Mapped[str] = mapped_column(String(50), nullable=False)
     config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AuditLog(Base):
+    """Audit log for entry-level versioning.
+
+    Records every mutation (create/update/delete) on data entries so they can
+    be reviewed and undone. This is NOT schema versioning (that's alembic) but
+    per-entry undo/redo of financial data changes.
+    """
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    record_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    operation: Mapped[str] = mapped_column(String(20), nullable=False)  # create, update, delete
+    tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    before_state: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON snapshot
+    after_state: Mapped[str | None] = mapped_column(Text, nullable=True)   # JSON snapshot
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_audit_log_table_record", "table_name", "record_id"),
+        Index("ix_audit_log_created_at", "created_at"),
+    )
 
 
 # Pydantic schemas for API serialization
