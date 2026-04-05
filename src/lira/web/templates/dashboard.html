@@ -66,6 +66,11 @@
             color: var(--accent);
         }
 
+        .nav-links a.active {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -135,31 +140,109 @@
         .chat-container {
             background: var(--bg-secondary);
             border-radius: 12px;
-            padding: 1.5rem;
             margin-top: 2rem;
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+        }
+
+        .chat-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--bg-tertiary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h2 {
+            margin-bottom: 0;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .chat-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .chat-actions button {
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            border: 1px solid var(--bg-tertiary);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .chat-actions button:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
         }
 
         .chat-messages {
-            min-height: 200px;
-            max-height: 400px;
+            flex: 1;
             overflow-y: auto;
-            margin-bottom: 1rem;
+            padding: 1rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
         }
 
         .chat-message {
-            padding: 0.75rem;
-            border-radius: 8px;
-            margin-bottom: 0.5rem;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            max-width: 85%;
+            line-height: 1.5;
         }
 
         .chat-message.user {
             background: var(--bg-tertiary);
-            margin-left: 2rem;
+            align-self: flex-end;
+            margin-left: auto;
         }
 
         .chat-message.assistant {
             background: rgba(56, 189, 248, 0.1);
-            margin-right: 2rem;
+            align-self: flex-start;
+            margin-right: auto;
+        }
+
+        .chat-message.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        .chat-message pre {
+            background: var(--bg-primary);
+            padding: 0.75rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+            font-size: 0.85rem;
+        }
+
+        .chat-message code {
+            background: var(--bg-primary);
+            padding: 0.1rem 0.3rem;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .chat-message ul, .chat-message ol {
+            margin: 0.5rem 0;
+            padding-left: 1.5rem;
+        }
+
+        .chat-message p {
+            margin: 0.5rem 0;
+        }
+
+        .chat-input-container {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--bg-tertiary);
         }
 
         .chat-input {
@@ -177,6 +260,11 @@
             font-size: 1rem;
         }
 
+        .chat-input input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
         .chat-input button {
             padding: 0.75rem 1.5rem;
             border-radius: 8px;
@@ -192,10 +280,121 @@
             opacity: 0.9;
         }
 
+        .chat-input button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .quick-actions button {
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            border: 1px solid var(--bg-tertiary);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .quick-actions button:hover {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border-color: var(--accent);
+        }
+
+        .visualizations-container {
+            margin-top: 2rem;
+            display: none;
+        }
+
+        .visualizations-container.has-plots {
+            display: block;
+        }
+
+        .visualizations-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .visualizations-header h2 {
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .visualizations-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 1rem;
+        }
+
+        .plot-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1rem;
+            border: 1px solid var(--bg-tertiary);
+        }
+
+        .plot-card img {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+
+        .plot-title {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+            text-align: center;
+        }
+
         .loading {
             text-align: center;
             color: var(--text-secondary);
             padding: 2rem;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.75rem 1rem;
+            align-items: center;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-4px); }
+        }
+
+        .welcome-message {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 2rem;
+        }
+
+        .welcome-message h3 {
+            color: var(--accent);
+            margin-bottom: 1rem;
         }
     </style>
 </head>
@@ -204,11 +403,10 @@
         <header>
             <h1>L.I.R.A.</h1>
             <nav class="nav-links">
-                <a href="/">Dashboard</a>
+                <a href="/" class="active">Dashboard</a>
                 <a href="/accounts">Accounts</a>
                 <a href="/portfolio">Portfolio</a>
                 <a href="/transactions">Transactions</a>
-                <a href="/chat">Chat</a>
             </nav>
         </header>
 
@@ -265,18 +463,46 @@
             </div>
         </div>
 
-        <div class="chat-container">
-            <h2>Chat with L.I.R.A.</h2>
-            <div class="chat-messages" id="chat-messages"></div>
-            <div class="chat-input">
-                <input type="text" id="chat-input" placeholder="Ask L.I.R.A. anything about your finances...">
-                <button onclick="sendMessage()">Send</button>
+        <div class="chat-container" id="chat-container">
+            <div class="chat-header">
+                <h2>Chat with L.I.R.A.</h2>
+                <div class="chat-actions">
+                    <button onclick="clearHistory()" title="Clear conversation">Clear</button>
+                </div>
             </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="welcome-message">
+                    <h3>Welcome to L.I.R.A.</h3>
+                    <p>Ask me anything about your finances, add transactions, or create visualizations.</p>
+                </div>
+            </div>
+            <div class="chat-input-container">
+                <div class="quick-actions">
+                    <button onclick="quickAction('Show my recent transactions')">Recent Transactions</button>
+                    <button onclick="quickAction('Show my account balances')">Account Balances</button>
+                    <button onclick="quickAction('Create a pie chart of spending by category')">Spending Chart</button>
+                    <button onclick="quickAction('Add a new transaction')">Add Transaction</button>
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="chat-input" placeholder="Ask L.I.R.A. anything about your finances...">
+                    <button onclick="sendMessage()" id="send-button">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="visualizations-container" id="visualizations-container">
+            <div class="visualizations-header">
+                <h2>Visualizations</h2>
+                <button onclick="clearVisualizations()" style="padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid var(--bg-tertiary); background: var(--bg-primary); color: var(--text-secondary); font-size: 0.75rem; cursor: pointer;">Clear All</button>
+            </div>
+            <div class="visualizations-grid" id="visualizations-grid"></div>
         </div>
     </div>
 
     <script>
-        const API_BASE = '/api';
+        const API_BASE = '';
+        let conversationHistory = [];
+        let visualizations = [];
 
         async function fetchDashboard() {
             try {
@@ -347,44 +573,139 @@
             `).join('');
         }
 
-        async function sendMessage() {
-            const input = document.getElementById('chat-input');
-            const message = input.value.trim();
-            if (!message) return;
+        function quickAction(text) {
+            document.getElementById('chat-input').value = text;
+            sendMessage();
+        }
 
-            addChatMessage('user', message);
-            input.value = '';
+        function clearHistory() {
+            conversationHistory = [];
+            const container = document.getElementById('chat-messages');
+            container.innerHTML = `
+                <div class="welcome-message">
+                    <h3>Welcome to L.I.R.A.</h3>
+                    <p>Ask me anything about your finances, add transactions, or create visualizations.</p>
+                </div>
+            `;
+            clearVisualizations();
+        }
 
-            addChatMessage('assistant', 'Thinking...', true);
+        function clearVisualizations() {
+            visualizations = [];
+            const container = document.getElementById('visualizations-container');
+            container.classList.remove('has-plots');
+            document.getElementById('visualizations-grid').innerHTML = '';
+        }
 
-            try {
-                const response = await fetch(`${API_BASE}/agent/query`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: message }),
-                });
-                const data = await response.json();
-                
-                document.querySelector('.chat-message.assistant:last-child').remove();
-                addChatMessage('assistant', data.response || data.error || 'No response');
-            } catch (error) {
-                document.querySelector('.chat-message.assistant:last-child').remove();
-                addChatMessage('assistant', 'Error: Failed to get response');
-            }
+        function addVisualization(imageBase64, title = 'Chart') {
+            visualizations.push({ base64: imageBase64, title: title });
+            const container = document.getElementById('visualizations-container');
+            container.classList.add('has-plots');
+            
+            const grid = document.getElementById('visualizations-grid');
+            const card = document.createElement('div');
+            card.className = 'plot-card';
+            card.innerHTML = `
+                <img src="data:image/png;base64,${imageBase64}" alt="${title}">
+                <div class="plot-title">${title}</div>
+            `;
+            grid.appendChild(card);
+        }
+
+        function renderMessage(content) {
+            let html = content;
+            html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+            html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+            html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+            html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+            html = html.replace(/\n\n/g, '</p><p>');
+            html = '<p>' + html + '</p>';
+            html = html.replace(/<p><\/p>/g, '');
+            return html;
         }
 
         function addChatMessage(role, content, isLoading = false) {
             const container = document.getElementById('chat-messages');
             const div = document.createElement('div');
-            div.className = `chat-message ${role}`;
-            div.textContent = content;
-            if (isLoading) div.id = 'loading-message';
+            
+            if (isLoading) {
+                div.className = `chat-message ${role} typing-indicator`;
+                div.id = 'loading-message';
+                div.innerHTML = '<span></span><span></span><span></span>';
+            } else if (role === 'error') {
+                div.className = 'chat-message error';
+                div.innerHTML = content;
+            } else {
+                div.className = `chat-message ${role}`;
+                if (role === 'assistant') {
+                    div.innerHTML = renderMessage(content);
+                } else {
+                    div.textContent = content;
+                }
+            }
+            
             container.appendChild(div);
             container.scrollTop = container.scrollHeight;
         }
 
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            input.value = '';
+            document.getElementById('send-button').disabled = true;
+
+            conversationHistory.push({ role: 'user', content: message });
+            addChatMessage('user', message);
+            addChatMessage('assistant', '', true);
+
+            try {
+                const response = await fetch(`${API_BASE}/agent/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: conversationHistory.slice(0, -1),
+                        new_message: message
+                    }),
+                });
+
+                const data = await response.json();
+                
+                document.querySelector('.chat-message.assistant:last-child').remove();
+                
+                if (data.error) {
+                    addChatMessage('error', `Error: ${data.error}`);
+                } else {
+                    addChatMessage('assistant', data.response);
+                    
+                    if (data.visualizations && data.visualizations.length > 0) {
+                        data.visualizations.forEach(img => {
+                            addVisualization(img, 'Generated Chart');
+                        });
+                    }
+                    
+                    conversationHistory = data.messages || conversationHistory;
+                }
+            } catch (error) {
+                document.querySelector('.chat-message.assistant:last-child').remove();
+                addChatMessage('error', 'Error: Failed to get response. Please try again.');
+                console.error('Chat error:', error);
+            } finally {
+                document.getElementById('send-button').disabled = false;
+            }
+        }
+
         document.getElementById('chat-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
         });
 
         fetchDashboard();

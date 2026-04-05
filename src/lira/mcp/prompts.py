@@ -1,6 +1,6 @@
 """MCP prompts for L.I.R.A."""
 
-from lira.mcp import mcp
+from lira.mcp.server import mcp
 
 @mcp.prompt()
 def financial_analysis(query: str) -> str:

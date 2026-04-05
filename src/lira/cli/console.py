@@ -21,7 +21,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
 
-from lira import __version__
+from lira.version import __version__
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,9 +51,7 @@ console = Console(
 
 @app.callback()
 def main(
-    interactive: bool = typer.Option(
-        False, "--interactive", "-i", help="Start interactive mode"
-    ),
+    interactive: bool = typer.Option(False, "--interactive", "-i", help="Start interactive mode"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug mode"),
 ) -> None:
     """L.I.R.A. CLI - AI-native personal finance tracker."""
@@ -142,9 +140,7 @@ def run_interactive() -> None:
                 draft_text = ""
 
                 with Live(
-                    _render_live_trace(
-                        draft_text=draft_text, trace_lines=trace_lines, elapsed=0.0
-                    ),
+                    _render_live_trace(draft_text=draft_text, trace_lines=trace_lines, elapsed=0.0),
                     console=console,
                     refresh_per_second=12,
                     transient=True,
@@ -221,27 +217,17 @@ def _format_tool_result(payload: dict[str, Any]) -> str:
     status = "ok" if success else "error"
 
     if success:
-        preview = _truncate_text(
-            json.dumps(payload.get("data"), default=str), max_chars=180
-        )
+        preview = _truncate_text(json.dumps(payload.get("data"), default=str), max_chars=180)
     else:
-        preview = _truncate_text(
-            str(payload.get("error", "unknown error")), max_chars=180
-        )
+        preview = _truncate_text(str(payload.get("error", "unknown error")), max_chars=180)
 
     return f"tool< {name} [{status}] {preview}"
 
 
-def _render_live_trace(
-    draft_text: str, trace_lines: list[str], elapsed: float
-) -> Panel:
+def _render_live_trace(draft_text: str, trace_lines: list[str], elapsed: float) -> Panel:
     """Build the live progress panel while the model is running."""
-    trace_block = (
-        "\n".join(trace_lines[-8:]) if trace_lines else "waiting for activity..."
-    )
-    draft_preview = (
-        _truncate_text(draft_text[-2000:], max_chars=2000) if draft_text else ""
-    )
+    trace_block = "\n".join(trace_lines[-8:]) if trace_lines else "waiting for activity..."
+    draft_preview = _truncate_text(draft_text[-2000:], max_chars=2000) if draft_text else ""
     if not draft_preview:
         draft_preview = "waiting for model output..."
 
@@ -371,6 +357,25 @@ def display_response(
         console.print("\n[dim]Additional data:[/dim]")
         console.print(response["data"])
 
+    visualizations = response.get("visualizations", [])
+    if visualizations:
+        console.print(f"\n[cyan]Generated {len(visualizations)} visualization(s)[/cyan]")
+        for i, img_base64 in enumerate(visualizations, 1):
+            try:
+                import base64
+                from PIL import Image
+                import io
+
+                img_data = base64.b64decode(img_base64)
+                img = Image.open(io.BytesIO(img_data))
+                img_path = f"/tmp/lira_plot_{i}.png"
+                img.save(img_path)
+                console.print(f"[dim]Plot saved to: {img_path}[/dim]")
+            except ImportError:
+                console.print(f"[dim]Visualization {i} available ({len(img_base64)} bytes)[/dim]")
+            except Exception as e:
+                console.print(f"[dim]Could not save plot {i}: {e}[/dim]")
+
     if show_trace:
         display_trace(response.get("trace", []))
     elif response.get("trace"):
@@ -444,9 +449,7 @@ def accounts(
 @app.command()
 def portfolio(
     show: bool = typer.Option(True, "--show", "-s", help="Show portfolio"),
-    update_prices: bool = typer.Option(
-        False, "--update-prices", "-u", help="Update stock prices"
-    ),
+    update_prices: bool = typer.Option(False, "--update-prices", "-u", help="Update stock prices"),
 ) -> None:
     """Manage investment portfolio."""
     from lira.db.session import DatabaseSession, init_database
@@ -535,9 +538,7 @@ async def update_all_prices() -> None:
                 if result["success"]:
                     holding.current_price = result["price"]
                     session.commit()
-                    console.print(
-                        f"[green]Updated {holding.symbol}: ${result['price']}[/green]"
-                    )
+                    console.print(f"[green]Updated {holding.symbol}: ${result['price']}[/green]")
             except Exception as e:
                 console.print(f"[red]Failed to update {holding.symbol}: {e}[/red]")
 

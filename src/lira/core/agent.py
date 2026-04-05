@@ -10,12 +10,17 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from lira.core.llm import OllamaProvider
-from lira.core.tools import Tool, ToolRegistry, ToolResult
+from lira.db.session import init_database
+from lira.mcp.server import mcp
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 class AgentState:
@@ -53,6 +58,7 @@ class AgentResponse:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     iterations: int = 0
+    visualizations: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -78,11 +84,10 @@ class Agent:
     def __init__(
         self,
         config: AgentConfig | None = None,
-        tool_registry: ToolRegistry | None = None,
         llm_provider: OllamaProvider | None = None,
     ) -> None:
         self.config = config or AgentConfig()
-        self.tool_registry = tool_registry or self._create_default_registry()
+        init_database()
         self.llm_provider = llm_provider or OllamaProvider(
             base_url=self.config.ollama_base_url,
             model=self.config.model,
@@ -99,217 +104,60 @@ class Agent:
         """Get current agent state."""
         return self._state
 
-    def _create_default_registry(self) -> ToolRegistry:
-        """Create default tool registry with CRUD operations."""
-        from decimal import Decimal
-
-        from lira.db.repositories import (
-            AccountRepository,
-            TransactionRepository,
-        )
-        from lira.db.session import DatabaseSession
-
-        registry = ToolRegistry()
-
-        class ListAccountsTool(Tool):
-            name = "list_accounts"
-            description = (
-                "List all accounts. Returns account details including balance."
-            )
-
-            async def execute(self, **kwargs: Any) -> ToolResult:
-                try:
-                    with DatabaseSession() as session:
-                        repo = AccountRepository(session)
-                        accounts = repo.get_all()
-                        return ToolResult(
-                            success=True,
-                            data=[
-                                {
-                                    "id": a.id,
-                                    "name": a.name,
-                                    "type": a.account_type.value,
-                                    "balance": float(a.balance),
-                                    "currency": a.currency,
-                                }
-                                for a in accounts
-                            ],
-                        )
-                except Exception as e:
-                    return ToolResult(success=False, error=str(e))
-
-            def get_schema(self) -> dict[str, Any]:
-                return {"type": "object", "properties": {}, "required": []}
-
-        class CreateTransactionTool(Tool):
-            name = "create_transaction"
-            description = "Create a new transaction (income or expense)"
-
-            async def execute(
-                self,
-                account_id: int,
-                amount: float,
-                transaction_type: str,
-                description: str = "",
-                **kwargs: Any,
-            ) -> ToolResult:
-                try:
-                    with DatabaseSession() as session:
-                        repo = TransactionRepository(session)
-                        t = repo.create(
-                            account_id=account_id,
-                            transaction_type=transaction_type,
-                            amount=Decimal(str(amount)),
-                            description=description,
-                        )
-                        return ToolResult(
-                            success=True,
-                            data={
-                                "id": t.id,
-                                "amount": float(t.amount),
-                                "type": t.transaction_type.value,
-                            },
-                        )
-                except Exception as e:
-                    return ToolResult(success=False, error=str(e))
-
-            def get_schema(self) -> dict[str, Any]:
-                return {
-                    "type": "object",
-                    "properties": {
-                        "account_id": {"type": "integer", "description": "Account ID"},
-                        "amount": {
-                            "type": "number",
-                            "description": "Transaction amount",
-                        },
-                        "transaction_type": {
-                            "type": "string",
-                            "enum": ["income", "expense"],
-                            "description": "Type of transaction",
-                        },
-                        "description": {"type": "string", "description": "Description"},
-                    },
-                    "required": ["account_id", "amount", "transaction_type"],
-                }
-
-        class GetTransactionsTool(Tool):
-            name = "get_transactions"
-            description = "Get recent transactions"
-
-            async def execute(
-                self, account_id: int | None = None, limit: int = 10, **kwargs: Any
-            ) -> ToolResult:
-                try:
-                    with DatabaseSession() as session:
-                        repo = TransactionRepository(session)
-                        transactions = repo.get_all(account_id=account_id, limit=limit)
-                        return ToolResult(
-                            success=True,
-                            data=[
-                                {
-                                    "id": t.id,
-                                    "date": t.date.isoformat(),
-                                    "amount": float(t.amount),
-                                    "type": t.transaction_type.value,
-                                    "description": t.description,
-                                }
-                                for t in transactions
-                            ],
-                        )
-                except Exception as e:
-                    return ToolResult(success=False, error=str(e))
-
-            def get_schema(self) -> dict[str, Any]:
-                return {
-                    "type": "object",
-                    "properties": {
-                        "account_id": {
-                            "type": "integer",
-                            "description": "Account ID (optional)",
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "default": 10,
-                            "description": "Max transactions to return",
-                        },
-                    },
-                    "required": [],
-                }
-
-        class CreateAccountTool(Tool):
-            name = "create_account"
-            description = "Create a new account"
-
-            async def execute(
-                self,
-                name: str,
-                account_type: str = "checking",
-                balance: float = 0.0,
-                **kwargs: Any,
-            ) -> ToolResult:
-                try:
-                    with DatabaseSession() as session:
-                        repo = AccountRepository(session)
-                        a = repo.create(
-                            name=name,
-                            account_type=account_type,
-                            balance=Decimal(str(balance)),
-                        )
-                        return ToolResult(
-                            success=True,
-                            data={
-                                "id": a.id,
-                                "name": a.name,
-                                "balance": float(a.balance),
-                            },
-                        )
-                except Exception as e:
-                    return ToolResult(success=False, error=str(e))
-
-            def get_schema(self) -> dict[str, Any]:
-                return {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Account name"},
-                        "account_type": {
-                            "type": "string",
-                            "enum": [
-                                "checking",
-                                "savings",
-                                "credit_card",
-                                "investment",
-                            ],
-                            "default": "checking",
-                        },
-                        "balance": {
-                            "type": "number",
-                            "default": 0.0,
-                            "description": "Initial balance",
-                        },
-                    },
-                    "required": ["name"],
-                }
-
-        registry.register(ListAccountsTool())
-        registry.register(CreateTransactionTool())
-        registry.register(GetTransactionsTool())
-        registry.register(CreateAccountTool())
-
-        return registry
-
     def _build_tools_schema(self) -> str:
         """Build tools description for system prompt."""
         tools_desc = []
-        for tool in self.tool_registry._tools.values():
+
+        for tool in mcp._local_provider._components.values():
+            if not hasattr(tool, "parameters"):
+                continue
             tools_desc.append(f"- {tool.name}: {tool.description}")
+
+            schema = tool.parameters or {}
+            properties = (
+                schema.get("properties", {}) if isinstance(schema, dict) else {}
+            )
+            required = (
+                set(schema.get("required", [])) if isinstance(schema, dict) else set()
+            )
+
+            if properties:
+                tools_desc.append("  args:")
+                for arg_name, arg_schema in properties.items():
+                    arg_info = arg_schema if isinstance(arg_schema, dict) else {}
+                    arg_type = arg_info.get("type", "any")
+                    arg_desc = arg_info.get("description", "")
+                    req = "required" if arg_name in required else "optional"
+
+                    parts = [f"{arg_name} ({arg_type}, {req})"]
+                    if "default" in arg_info:
+                        parts.append(f"default={arg_info['default']}")
+                    if "enum" in arg_info:
+                        parts.append(f"enum={arg_info['enum']}")
+
+                    header = ", ".join(parts)
+                    if arg_desc:
+                        tools_desc.append(f"    - {header}: {arg_desc}")
+                    else:
+                        tools_desc.append(f"    - {header}")
 
         return "\n".join(tools_desc)
 
-    async def run(self, user_input: str) -> AgentResponse:
-        """Run the agent with user input and return the final response."""
+    async def run(
+        self,
+        user_input: str,
+        conversation_history: list[dict[str, Any]] | None = None,
+    ) -> AgentResponse:
+        """Run the agent with user input and return the final response.
+
+        Args:
+            user_input: Current user message
+            conversation_history: Optional external conversation history
+                                  (for stateless server mode)
+        """
         final_response: AgentResponse | None = None
 
-        async for event in self.run_stream(user_input):
+        async for event in self.run_stream(user_input, conversation_history):
             if event.kind in {"final", "error"}:
                 final_response = event.payload.get("response")
 
@@ -323,11 +171,17 @@ class Agent:
 
         return final_response
 
-    async def run_stream(self, user_input: str) -> AsyncIterator[AgentEvent]:
+    async def run_stream(
+        self,
+        user_input: str,
+        conversation_history: list[dict[str, Any]] | None = None,
+    ) -> AsyncIterator[AgentEvent]:
         """Run the agent and stream intermediate events.
 
         Args:
             user_input: Natural language user query.
+            conversation_history: Optional external conversation history
+                                  (for stateless server mode)
 
         Yields:
             AgentEvent values describing model output, tool calls, and final result.
@@ -335,13 +189,17 @@ class Agent:
         self._state = AgentState.REASONING
         yield AgentEvent(kind="status", content="Analyzing request")
 
+        today = datetime.now(timezone.utc).date().isoformat()
         system_prompt = f"""You are L.I.R.A., an AI assistant for personal finance management.
+
+Current date: {today}
 
 Your capabilities:
 - list_accounts: List all accounts with their balances
 - create_account: Create a new financial account
 - create_transaction: Record income or expenses
 - get_transactions: View recent transactions
+- generate_plot: Create visualizations (bar, line, pie, scatter charts)
 
 Available tools:
 {self._tools_schema}
@@ -349,8 +207,10 @@ Available tools:
 Instructions:
 1. Parse the user's natural language request
 2. If the user wants to see data, call the appropriate tool(s)
-3. Return results in a friendly format
-4. If creating data, confirm with user first
+3. If the user wants a chart or visualization, use generate_plot
+4. Return results in a friendly format
+5. If creating data, confirm with user first
+6. Tool argument names must match the schema exactly (for example, use transaction_type, not type)
 
 IMPORTANT: When calling tools, respond ONLY with JSON like:
 {{"tool_calls": [{{"name": "tool_name", "arguments": {{"arg1": "value1"}}}}]}}
@@ -358,27 +218,56 @@ IMPORTANT: When calling tools, respond ONLY with JSON like:
 If no tools needed, respond with plain text."""
 
         conversation = self._build_conversation(
-            system_prompt=system_prompt, user_input=user_input
+            system_prompt=system_prompt,
+            user_input=user_input,
+            external_history=conversation_history,
         )
 
-        try:
-            llm_chunks: list[str] = []
-            async for chunk in self.llm_provider.astream_complete(
-                conversation,
-                temperature=self.config.temperature,
-            ):
-                llm_chunks.append(chunk)
-                yield AgentEvent(kind="llm_token", content=chunk)
+        visualizations: list[str] = []
 
-            response_text = self._clean_response("".join(llm_chunks))
+        iterations = 0
+        resolved_calls: list[dict[str, Any]] = []
 
-            tool_calls = self._parse_tool_calls(response_text)
-            if tool_calls:
+        while iterations < self.config.max_iterations:
+            iterations += 1
+            try:
+                llm_chunks: list[str] = []
+                async for chunk in self.llm_provider.astream_complete(
+                    conversation,
+                    temperature=self.config.temperature,
+                ):
+                    llm_chunks.append(chunk)
+                    yield AgentEvent(kind="llm_token", content=chunk)
+
+                response_text = self._clean_response("".join(llm_chunks))
+
+                tool_calls = self._parse_tool_calls(response_text)
+                if not tool_calls:
+                    self._state = AgentState.COMPLETE
+                    final_message = (
+                        response_text or "I didn't understand that. Can you rephrase?"
+                    )
+                    response = AgentResponse(
+                        state=AgentState.COMPLETE,
+                        message=final_message,
+                        iterations=iterations,
+                        visualizations=visualizations,
+                        tool_calls=resolved_calls,
+                    )
+                    self._append_history(
+                        user_input=user_input, assistant_output=final_message
+                    )
+                    yield AgentEvent(
+                        kind="final",
+                        content=final_message,
+                        payload={"response": response},
+                    )
+                    return
+
                 self._state = AgentState.ACTING
                 yield AgentEvent(kind="status", content="Executing tools")
 
                 results: list[Any] = []
-                resolved_calls: list[dict[str, Any]] = []
                 for call in tool_calls:
                     tool_name = call["name"]
                     arguments = call["arguments"]
@@ -389,9 +278,46 @@ If no tools needed, respond with plain text."""
                         payload={"name": tool_name, "arguments": arguments},
                     )
 
-                    tool = self.tool_registry.get(tool_name)
-                    if tool is None:
-                        error_text = f"Unknown tool: {tool_name}"
+                    import json
+
+                    try:
+                        res = await mcp.call_tool(tool_name, arguments)
+                        tool_data = ""
+                        for content_item in res.content:
+                            if content_item.type == "text":
+                                tool_data += content_item.text
+
+                        tool_error = None
+                        parsed_data = None
+                        success = True
+
+                        if tool_error:
+                            results.append(f"Error: {tool_error}")
+                        else:
+                            try:
+                                parsed_data = json.loads(tool_data)
+                            except json.JSONDecodeError:
+                                parsed_data = tool_data
+
+                            results.append(parsed_data)
+                            if tool_name == "generate_plot" and isinstance(
+                                parsed_data, dict
+                            ):
+                                img = parsed_data.get("image_base64")
+                                if img:
+                                    visualizations.append(img)
+
+                        yield AgentEvent(
+                            kind="tool_result",
+                            payload={
+                                "name": tool_name,
+                                "success": success,
+                                "error": tool_error,
+                                "data": parsed_data,
+                            },
+                        )
+                    except Exception as e:
+                        error_text = f"Tool failure: {tool_name} - {e!s}"
                         results.append(error_text)
                         yield AgentEvent(
                             kind="tool_result",
@@ -404,77 +330,73 @@ If no tools needed, respond with plain text."""
                         )
                         continue
 
-                    result = await tool.execute(**arguments)
-                    if result.success:
-                        results.append(result.data)
-                    else:
-                        results.append(f"Error: {result.error}")
+                # Instead of returning COMPLETE here, we append tool results to the conversation
+                # and loop again.
+                tool_results_text = "Tool Results:\n" + self._format_results(results)
+                conversation += f"\n\nAssistant (Tool call): {json.dumps({'tool_calls': tool_calls})}\n\nSystem: {tool_results_text}\n\nRespond with JSON tool call or plain text:"
 
-                    yield AgentEvent(
-                        kind="tool_result",
-                        payload={
-                            "name": tool_name,
-                            "success": result.success,
-                            "error": result.error,
-                            "data": result.data,
-                        },
-                    )
-
-                final_message = self._format_results(results)
-                self._state = AgentState.COMPLETE
+            except Exception as e:
+                logger.exception("Agent error")
+                self._state = AgentState.ERROR
+                message = f"I encountered an error: {e!s}"
                 response = AgentResponse(
-                    state=AgentState.COMPLETE,
-                    message=final_message,
-                    tool_calls=resolved_calls,
-                    iterations=1,
+                    state=AgentState.ERROR,
+                    message=message,
+                    error=str(e),
+                    visualizations=visualizations,
                 )
-                self._append_history(
-                    user_input=user_input, assistant_output=final_message
-                )
+                self._append_history(user_input=user_input, assistant_output=message)
                 yield AgentEvent(
-                    kind="final", content=final_message, payload={"response": response}
+                    kind="error", content=message, payload={"response": response}
                 )
                 return
 
-            self._state = AgentState.COMPLETE
-            final_message = (
-                response_text or "I didn't understand that. Can you rephrase?"
-            )
-            response = AgentResponse(
-                state=AgentState.COMPLETE,
-                message=final_message,
-                iterations=1,
-            )
-            self._append_history(user_input=user_input, assistant_output=final_message)
-            yield AgentEvent(
-                kind="final", content=final_message, payload={"response": response}
-            )
+        # If we loop out
+        self._state = AgentState.ERROR
+        message = "Max iterations reached."
+        response = AgentResponse(
+            state=AgentState.ERROR,
+            message=message,
+            error="max_iterations",
+            visualizations=visualizations,
+        )
+        self._append_history(user_input=user_input, assistant_output=message)
+        yield AgentEvent(kind="error", content=message, payload={"response": response})
 
-        except Exception as e:
-            logger.exception("Agent error")
-            self._state = AgentState.ERROR
-            message = f"I encountered an error: {e!s}"
-            response = AgentResponse(
-                state=AgentState.ERROR,
-                message=message,
-                error=str(e),
-            )
-            self._append_history(user_input=user_input, assistant_output=message)
-            yield AgentEvent(
-                kind="error", content=message, payload={"response": response}
-            )
+    def _build_conversation(
+        self,
+        system_prompt: str,
+        user_input: str,
+        external_history: list[dict[str, Any]] | None = None,
+    ) -> str:
+        """Build conversation text with recent history included.
 
-    def _build_conversation(self, system_prompt: str, user_input: str) -> str:
-        """Build conversation text with recent history included."""
+        Args:
+            system_prompt: System instructions for the model
+            user_input: Current user message
+            external_history: External conversation history (for stateless mode)
+
+        Returns:
+            Formatted conversation string
+        """
         lines = [f"System: {system_prompt}", ""]
 
-        for entry in self._get_recent_history():
-            role = entry.get("role", "assistant")
-            label = "User" if role == "user" else "Assistant"
-            content = str(entry.get("content", "")).strip()
-            if not content:
-                continue
-            lines.extend([f"{label}: {content}", ""])
+        if external_history:
+            for entry in external_history[-self.config.history_turn_limit * 2 :]:
+                role = entry.get("role", "assistant")
+                label = "User" if role == "user" else "Assistant"
+                content = str(entry.get("content", "")).strip()
+                if not content:
+                    continue
+                lines.extend([f"{label}: {content}", ""])
+        else:
+            for entry in self._get_recent_history():
+                role = entry.get("role", "assistant")
+                label = "User" if role == "user" else "Assistant"
+                content = str(entry.get("content", "")).strip()
+                if not content:
+                    continue
+                lines.extend([f"{label}: {content}", ""])
 
         lines.extend(
             [

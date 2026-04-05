@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from lira.db.models import (
     Account,
@@ -23,16 +24,20 @@ from lira.db.models import (
 )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def engine():
     """Create in-memory SQLite engine for tests."""
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
-    yield engine
-    engine.dispose()
+    try:
+        yield engine
+    finally:
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
 
 
 @pytest.fixture(scope="function")

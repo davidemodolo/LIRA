@@ -21,7 +21,7 @@ class OllamaProvider:
         model: str = "gemma4:31b",
         temperature: float = 0.7,
         timeout: int = 120,
-        keep_alive: str | None = "30m",
+        keep_alive: int | str = -1,  # -1 keeps the model loaded in memory indefinitely
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model

@@ -17,9 +17,15 @@ from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
-from lira.mcp import mcp
-from lira.db.models import Category, Holding, Transaction
-from lira.db.repositories import AccountRepository, TransactionRepository
+from lira.mcp.server import mcp
+from lira.db.models import (
+    Account,
+    AccountType,
+    Category,
+    Holding,
+    Transaction,
+    TransactionType,
+)
 from lira.db.session import DatabaseSession
 
 try:
@@ -34,10 +40,22 @@ except ImportError:
 
 @mcp.tool()
 async def list_accounts(active_only: bool = True) -> list[dict[str, Any]]:
-    """List accounts with balances and metadata."""
+    """List all user accounts with their current balances and associated metadata.
+
+    This tool is used to query the database and retrieve a summary of all financial accounts
+    (Checking, Savings, Credit Cards, etc.), including their balances and currency types.
+
+    Args:
+        active_only: If True, only returns active accounts. If False, returns all accounts.
+
+    Returns:
+        A list of dictionaries, each containing the id, name, type, balance, and currency of an account.
+    """
     with DatabaseSession() as session:
-        repo = AccountRepository(session)
-        accounts = repo.get_all(active_only=active_only)
+        query = session.query(Account)
+        if active_only:
+            query = query.filter(Account.is_active == True)
+        accounts = query.all()
         return [
             {
                 "id": account.id,
@@ -49,25 +67,41 @@ async def list_accounts(active_only: bool = True) -> list[dict[str, Any]]:
             for account in accounts
         ]
 
+
 @mcp.tool()
 async def create_account(
     name: str,
     account_type: str = "checking",
     balance: float = 0.0,
 ) -> dict[str, Any]:
-    """Create a new account."""
+    """Create a new financial account (e.g., checking, savings, credit, loan).
+
+    This tool provisions a new money tracking account in the SQLite SQL database where future
+    transactions can be recorded.
+
+    Args:
+        name: The display name of the account (e.g. "Chase Checking").
+        account_type: The standard type classification of the account (e.g. "checking", "savings").
+        balance: The initial starting balance for the account. Allows initializing with an existing sum.
+
+    Returns:
+        A dictionary containing the generated account id, name, and exact starting balance.
+    """
     with DatabaseSession() as session:
-        repo = AccountRepository(session)
-        account = repo.create(
+        account = Account(
             name=name,
-            account_type=account_type,
+            account_type=AccountType(account_type),
             balance=Decimal(str(balance)),
         )
+        session.add(account)
+        session.commit()
+        session.refresh(account)
         return {
             "id": account.id,
             "name": account.name,
             "balance": float(account.balance),
         }
+
 
 @mcp.tool()
 async def create_transaction(
@@ -76,20 +110,52 @@ async def create_transaction(
     transaction_type: str,
     description: str = "",
 ) -> dict[str, Any]:
-    """Create a new transaction (income or expense)."""
+    """Create a new real-world financial transaction representing an income or expense.
+
+    This tool logs movement of money inside an established account. Based on the selected
+    transaction_type, it will automatically update the running balance of the target account
+    (an expense will decrease it, an income will increase it).
+
+    Args:
+        account_id: The unique database id of the account this transaction applies to.
+        amount: The monetary value of the transaction. For expenses, use a negative float.
+        transaction_type: 'expense', 'income', or 'transfer'. Affects account balance logic.
+        description: A short memo describing the purchase, vendor, or reasoning.
+
+    Returns:
+        A dictionary containing the generated transaction id, actual logged amount, and recorded type.
+    """
     with DatabaseSession() as session:
-        repo = TransactionRepository(session)
-        transaction = repo.create(
+        account = session.query(Account).get(account_id)
+        if not account:
+            raise ValueError(f"Account {account_id} not found")
+
+        tx_type = TransactionType(transaction_type)
+        dec_amount = Decimal(str(amount))
+
+        transaction = Transaction(
             account_id=account_id,
-            transaction_type=transaction_type,
-            amount=Decimal(str(amount)),
+            transaction_type=tx_type,
+            amount=dec_amount,
             description=description,
+            date=datetime.now(),
         )
+
+        if tx_type == TransactionType.EXPENSE:
+            account.balance -= dec_amount
+        elif tx_type == TransactionType.INCOME:
+            account.balance += dec_amount
+
+        session.add(transaction)
+        session.commit()
+        session.refresh(transaction)
+
         return {
             "id": transaction.id,
             "amount": float(transaction.amount),
             "type": transaction.transaction_type.value,
         }
+
 
 @mcp.tool()
 async def generate_plot(
@@ -99,7 +165,21 @@ async def generate_plot(
     x_key: str = "x",
     y_key: str = "y",
 ) -> dict[str, Any]:
-    """Generate a visualization chart and return base64 PNG."""
+    """Generate an analytical matplotlib visualization chart for financial reporting.
+
+    This agentic tool visualizes incoming dictionary data to build beautiful graphs. It will return
+    a strictly formatted base64 encoded PNG representing the graph inside an invisible container context.
+
+    Args:
+        plot_type: Defines graph aesthetics (e.g. 'bar', 'line', 'pie', 'scatter').
+        title: Explanatory header/title given to the chart.
+        data: Expected list of dictionaries where each record holds the x and y mapping.
+        x_key: The string referencing the specific key inside "data" storing the x values. Default: "x".
+        y_key: The string referencing the specific key inside "data" storing the y values. Default: "y".
+
+    Returns:
+        JSON response including the raw base_64 string representing the rendered Matplotlib PNG.
+    """
     if matplotlib is None or plt is None:
         raise RuntimeError("matplotlib is required for plotting")
 
@@ -147,6 +227,7 @@ async def generate_plot(
         "title": title,
     }
 
+
 @mcp.tool()
 async def execute_sql(
     query: str,
@@ -174,7 +255,9 @@ async def execute_sql(
         raise ValueError("Multiple SQL statements are not allowed.")
 
     if not normalized.startswith(("SELECT", "WITH")):
-        raise ValueError("Only SELECT/CTE queries are allowed. Use mutation tools for data changes.")
+        raise ValueError(
+            "Only SELECT/CTE queries are allowed. Use mutation tools for data changes."
+        )
 
     with DatabaseSession() as session:
         # Use SQLAlchemy's text parameters wrapper for safety
@@ -182,21 +265,25 @@ async def execute_sql(
         keys = result.keys()
         return [dict(zip(keys, row, strict=False)) for row in result]
 
+
 @mcp.tool()
 async def fetch_stock(
     symbol: str,
     include_history: bool = False,
     period: str = "1mo",
 ) -> dict[str, Any]:
-    """Fetch current stock quote and basic info from Yahoo Finance.
+    """Fetch current, real-time stock quotes, basic info, and history via Yahoo Finance.
+
+    A highly capable querying API designed to pull real market pricing for publicly traded assets.
+    Always use this tool when evaluating portfolio metrics, market caps, or the daily close prices.
 
     Args:
-        symbol: Stock ticker symbol (e.g., AAPL, GOOGL)
-        include_history: Whether to include historical data
-        period: Time period for history (1d, 5d, 1mo, 3mo, 6mo, 1y, 5y, max)
+        symbol: The publicly traded stock ticker symbol (e.g., 'AAPL', 'VTI', 'MSFT').
+        include_history: Should the response append the time-series trajectory of standard EOD price frames.
+        period: Granularity boundary for the historical price feed (e.g., '1d', '5d', '1mo', '3mo', '6mo', '1y').
 
     Returns:
-        Stock data
+        JSON response with the precise dynamic localized quote metrics and historical DataFrame strings.
     """
     ticker = yf.Ticker(symbol)
     info = ticker.info
@@ -213,7 +300,7 @@ async def fetch_stock(
         "dividend_yield": info.get("dividendYield"),
         "52_week_high": info.get("fiftyTwoWeekHigh"),
         "52_week_low": info.get("fiftyTwoWeekLow"),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now().isoformat(),
     }
 
     if include_history:
@@ -232,6 +319,7 @@ async def fetch_stock(
 
     return result
 
+
 @mcp.tool()
 async def get_transactions(
     account_id: int | None = None,
@@ -243,20 +331,23 @@ async def get_transactions(
     max_amount: float | None = None,
     limit: int = 100,
 ) -> dict[str, Any]:
-    """Get transactions from the database with optional filters.
+    """Retrieves organized, structured lists of recent transactions filtered directly from the sqlite database.
+
+    A unified ledger query engine mapping filters to transaction criteria. Ideal for summarizing spending behaviour,
+    evaluating budgets, and reviewing specific historical account mutations over localized timeframes.
 
     Args:
-        account_id: Filter by account ID
-        category: Filter by category name
-        start_date: Start date (YYYY-MM-DD)
-        end_date: End date (YYYY-MM-DD)
-        transaction_type: Filter by transaction type
-        min_amount: Minimum transaction amount
-        max_amount: Maximum transaction amount
-        limit: Maximum number of results
+        account_id: Narrow to a single Account instance by its primary key ID identifier.
+        category: Filter exact categorical descriptors matches.
+        start_date: Filter queries occurring on or after 'YYYY-MM-DD'.
+        end_date: Filter queries occurring on or prior to 'YYYY-MM-DD'.
+        transaction_type: Require exact matching of 'expense', 'income', or 'transfer'.
+        min_amount: Ignore transactions under this scalar float boundary.
+        max_amount: Ignore transactions eclipsing this scalar float boundary.
+        limit: Limit length (Pagination). Defaults to capping at 100 recent rows.
 
     Returns:
-        Filtered transactions
+        JSON response with total counts and sliced serialized transaction objects.
     """
     with DatabaseSession() as session:
         query = session.query(Transaction)
@@ -304,19 +395,24 @@ async def get_transactions(
         "count": len(formatted_transactions),
     }
 
+
 @mcp.tool()
 async def get_portfolio(
     portfolio_id: int | None = None,
     include_performance: bool = True,
 ) -> dict[str, Any]:
-    """Get current portfolio holdings and performance.
+    """Inspects the asset and stock portfolio, calculating real-time investment exposure and valuation.
+
+    A sophisticated reporting engine which pulls down stored shares (quantities, cost basis) and optionally
+    evaluates current market rate valuations using real-world stock quotes (yfinance) to tabulate percentage
+    gains/losses natively within the server logic.
 
     Args:
-        portfolio_id: Specific portfolio ID (default: all)
-        include_performance: Include performance metrics
+        portfolio_id: If specified, target one particular defined portfolio instance ID. Otherwise aggregates all investments.
+        include_performance: Pass True to trigger external network calls which enrich the list with current price metrics.
 
     Returns:
-        Portfolio holdings and performance
+        JSON structure with detailed sum of all Holdings, unified value, total basis, and real-time gain assessments.
     """
     with DatabaseSession() as session:
         query = session.query(Holding)
@@ -373,6 +469,7 @@ async def get_portfolio(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
+
 @mcp.tool()
 async def calculate_tax(
     sales: list[dict[str, Any]],
@@ -380,18 +477,22 @@ async def calculate_tax(
     tax_rate_long: float = 0.15,
     holding_period_days: int = 365,
 ) -> dict[str, Any]:
-    """Calculate estimated capital gains tax for realized gains.
+    """Tax estimation engine computing net capital gains (long/short-term models).
+
+    A sophisticated rule engine designed to ingest a ledger of sale records against cost basis. Differentiates
+    long-term capital holdings versus short-term day trades accurately computing net and split tax burdens.
 
     Args:
-        sales: List of sales with symbol, quantity, proceeds, purchase_date, sale_date
-        tax_rate_short: Tax rate for short-term gains
-        tax_rate_long: Tax rate for long-term gains
-        holding_period_days: Days to qualify for long-term treatment
+        sales: Required array of dictionaries structuring asset sales. E.g.[{'symbol': 'NVDA', 'quantity': 10, 'proceeds': 1050.2, 'cost_basis': 900.0, 'purchase_date': '2023-01-01', 'sale_date': '2023-08-01'}]
+        tax_rate_short: Short-term income-capped bracket float scalar (e.g. 0.35 for 35%).
+        tax_rate_long: Long-term tax concession bracket float scalar (e.g. 0.15 for 15%).
+        holding_period_days: Default cutoff to differentiate capital gains maturity.
 
     Returns:
-        Tax calculation breakdown
+        JSON summarizing short_term, long_term, and overall obligations mapped to absolute values.
     """
     from datetime import datetime
+
     short_term_gains = Decimal("0")
     long_term_gains = Decimal("0")
     short_term_losses = Decimal("0")
@@ -404,7 +505,9 @@ async def calculate_tax(
         proceeds = Decimal(str(sale["proceeds"]))
         cost_basis = Decimal(str(sale.get("cost_basis", 0)))
 
-        purchase_date = datetime.fromisoformat(sale["purchase_date"]).replace(tzinfo=None)
+        purchase_date = datetime.fromisoformat(sale["purchase_date"]).replace(
+            tzinfo=None
+        )
         sale_date = datetime.fromisoformat(sale["sale_date"]).replace(tzinfo=None)
 
         days_held = (sale_date - purchase_date).days
@@ -423,15 +526,17 @@ async def calculate_tax(
             else:
                 short_term_losses += abs(gain_loss)
 
-        detailed.append({
-            "symbol": symbol,
-            "quantity": float(quantity),
-            "proceeds": float(proceeds),
-            "cost_basis": float(cost_basis),
-            "gain_loss": float(gain_loss),
-            "days_held": days_held,
-            "term": "long" if is_long_term else "short",
-        })
+        detailed.append(
+            {
+                "symbol": symbol,
+                "quantity": float(quantity),
+                "proceeds": float(proceeds),
+                "cost_basis": float(cost_basis),
+                "gain_loss": float(gain_loss),
+                "days_held": days_held,
+                "term": "long" if is_long_term else "short",
+            }
+        )
 
     net_short_term = short_term_gains - short_term_losses
     net_long_term = long_term_gains - long_term_losses
