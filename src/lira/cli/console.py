@@ -9,14 +9,14 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import typer
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
@@ -51,7 +51,9 @@ console = Console(
 
 @app.callback()
 def main(
-    interactive: bool = typer.Option(False, "--interactive", "-i", help="Start interactive mode"),
+    interactive: bool = typer.Option(
+        False, "--interactive", "-i", help="Start interactive mode"
+    ),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug mode"),
 ) -> None:
     """L.I.R.A. CLI - AI-native personal finance tracker."""
@@ -82,9 +84,7 @@ def run_interactive() -> None:
     init_database()
     agent = Agent(
         config=AgentConfig(
-            model="gemma4:31b",
             enable_self_correction=True,
-            temperature=0.7,
         )
     )
 
@@ -101,6 +101,12 @@ def run_interactive() -> None:
     show_trace = False
     last_trace: list[str] = []
 
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import HTML
+    from prompt_toolkit.history import InMemoryHistory
+
+    prompt_session = PromptSession(history=InMemoryHistory())
+
     console.print("\n[green]Interactive mode started. Type 'exit' to quit.[/green]")
     console.print(
         "[dim]Commands: /trace toggle trace, /show-trace view last trace, /reset clear session[/dim]\n"
@@ -109,7 +115,9 @@ def run_interactive() -> None:
     try:
         while True:
             try:
-                user_input = Prompt.ask("\n[bold blue]You[/bold blue]")
+                user_input = prompt_session.prompt(
+                    HTML("<b><ansiblue>You ></ansiblue></b> ")
+                )
                 command = user_input.strip().lower()
 
                 if command in ("exit", "quit", "q"):
@@ -140,7 +148,9 @@ def run_interactive() -> None:
                 draft_text = ""
 
                 with Live(
-                    _render_live_trace(draft_text=draft_text, trace_lines=trace_lines, elapsed=0.0),
+                    _render_live_trace(
+                        draft_text=draft_text, trace_lines=trace_lines, elapsed=0.0
+                    ),
                     console=console,
                     refresh_per_second=12,
                     transient=True,
@@ -154,13 +164,14 @@ def run_interactive() -> None:
                         live_ref: Live = live,
                         state: dict[str, str] = draft_state,
                     ) -> None:
-
                         if event.kind == "status" and event.content:
                             trace_ref.append(f"state> {event.content}")
                         elif event.kind == "tool_call":
                             trace_ref.append(_format_tool_call(event.payload))
                         elif event.kind == "tool_result":
                             trace_ref.append(_format_tool_result(event.payload))
+                            # Reset draft when new loop starts
+                            state["text"] = ""
                         elif event.kind == "llm_token" and event.content:
                             state["text"] += event.content
 
@@ -217,27 +228,36 @@ def _format_tool_result(payload: dict[str, Any]) -> str:
     status = "ok" if success else "error"
 
     if success:
-        preview = _truncate_text(json.dumps(payload.get("data"), default=str), max_chars=180)
+        preview = _truncate_text(
+            json.dumps(payload.get("data"), default=str), max_chars=180
+        )
     else:
-        preview = _truncate_text(str(payload.get("error", "unknown error")), max_chars=180)
+        preview = _truncate_text(
+            str(payload.get("error", "unknown error")), max_chars=180
+        )
 
     return f"tool< {name} [{status}] {preview}"
 
 
-def _render_live_trace(draft_text: str, trace_lines: list[str], elapsed: float) -> Panel:
+def _render_live_trace(
+    draft_text: str, trace_lines: list[str], elapsed: float
+) -> Panel:
     """Build the live progress panel while the model is running."""
-    trace_block = "\n".join(trace_lines[-8:]) if trace_lines else "waiting for activity..."
-    draft_preview = _truncate_text(draft_text[-2000:], max_chars=2000) if draft_text else ""
-    if not draft_preview:
-        draft_preview = "waiting for model output..."
+    trace_block = (
+        "\n".join(trace_lines[-8:]) if trace_lines else "waiting for activity..."
+    )
 
     body = Group(
         Text(f"Running... {elapsed:.1f}s", style="cyan"),
         Text("Thinking and tools", style="bold yellow"),
         Text(trace_block, style="yellow"),
         Text(""),
-        Text("Model draft", style="bold green"),
-        Text(draft_preview, style="green"),
+        Text("Model response (live)", style="bold green"),
+        (
+            Text(draft_text, style="green")
+            if draft_text
+            else Text("waiting for model output...", style="green")
+        ),
     )
     return Panel(body, title="L.I.R.A. Live", border_style="cyan")
 
@@ -359,12 +379,15 @@ def display_response(
 
     visualizations = response.get("visualizations", [])
     if visualizations:
-        console.print(f"\n[cyan]Generated {len(visualizations)} visualization(s)[/cyan]")
+        console.print(
+            f"\n[cyan]Generated {len(visualizations)} visualization(s)[/cyan]"
+        )
         for i, img_base64 in enumerate(visualizations, 1):
             try:
                 import base64
-                from PIL import Image
                 import io
+
+                from PIL import Image
 
                 img_data = base64.b64decode(img_base64)
                 img = Image.open(io.BytesIO(img_data))
@@ -372,7 +395,9 @@ def display_response(
                 img.save(img_path)
                 console.print(f"[dim]Plot saved to: {img_path}[/dim]")
             except ImportError:
-                console.print(f"[dim]Visualization {i} available ({len(img_base64)} bytes)[/dim]")
+                console.print(
+                    f"[dim]Visualization {i} available ({len(img_base64)} bytes)[/dim]"
+                )
             except Exception as e:
                 console.print(f"[dim]Could not save plot {i}: {e}[/dim]")
 
@@ -449,7 +474,9 @@ def accounts(
 @app.command()
 def portfolio(
     show: bool = typer.Option(True, "--show", "-s", help="Show portfolio"),
-    update_prices: bool = typer.Option(False, "--update-prices", "-u", help="Update stock prices"),
+    update_prices: bool = typer.Option(
+        False, "--update-prices", "-u", help="Update stock prices"
+    ),
 ) -> None:
     """Manage investment portfolio."""
     from lira.db.session import DatabaseSession, init_database
@@ -538,7 +565,9 @@ async def update_all_prices() -> None:
                 if result["success"]:
                     holding.current_price = result["price"]
                     session.commit()
-                    console.print(f"[green]Updated {holding.symbol}: ${result['price']}[/green]")
+                    console.print(
+                        f"[green]Updated {holding.symbol}: ${result['price']}[/green]"
+                    )
             except Exception as e:
                 console.print(f"[red]Failed to update {holding.symbol}: {e}[/red]")
 

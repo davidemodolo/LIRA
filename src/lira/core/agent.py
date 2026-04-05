@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from lira.core.llm import OllamaProvider
+from lira.core.config import settings
+from lira.core.llm import LLMProvider, get_llm_provider
 from lira.db.session import init_database
 from lira.mcp.server import mcp
 
@@ -38,13 +39,13 @@ class AgentState:
 class AgentConfig:
     """Configuration for the L.I.R.A. agent."""
 
-    model: str = "gemma4:31b"
-    max_iterations: int = 10
-    temperature: float = 0.7
-    timeout: int = 120
+    max_iterations: int = field(default_factory=lambda: settings.agent_max_iterations)
+    temperature: float = field(default_factory=lambda: settings.agent_temperature)
+    timeout: int | None = field(default_factory=lambda: settings.agent_timeout)
+    max_context_tokens: int = field(
+        default_factory=lambda: settings.agent_max_context_tokens
+    )
     enable_self_correction: bool = True
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_keep_alive: str = "30m"
     history_turn_limit: int = 30
 
 
@@ -84,17 +85,16 @@ class Agent:
     def __init__(
         self,
         config: AgentConfig | None = None,
-        llm_provider: OllamaProvider | None = None,
+        llm_provider: LLMProvider | None = None,
     ) -> None:
         self.config = config or AgentConfig()
         init_database()
-        self.llm_provider = llm_provider or OllamaProvider(
-            base_url=self.config.ollama_base_url,
-            model=self.config.model,
-            temperature=self.config.temperature,
-            timeout=self.config.timeout,
-            keep_alive=self.config.ollama_keep_alive,
-        )
+
+        if llm_provider:
+            self.llm_provider = llm_provider
+        else:
+            self.llm_provider = get_llm_provider()
+
         self._state = AgentState.IDLE
         self._history: list[dict[str, Any]] = []
         self._tools_schema = self._build_tools_schema()
@@ -187,7 +187,6 @@ class Agent:
             AgentEvent values describing model output, tool calls, and final result.
         """
         self._state = AgentState.REASONING
-        yield AgentEvent(kind="status", content="Analyzing request")
 
         today = datetime.now(timezone.utc).date().isoformat()
         system_prompt = f"""You are L.I.R.A., an AI assistant for personal finance management.
@@ -207,10 +206,11 @@ Available tools:
 Instructions:
 1. Parse the user's natural language request
 2. If the user wants to see data, call the appropriate tool(s)
-3. If the user wants a chart or visualization, use generate_plot
-4. Return results in a friendly format
-5. If creating data, confirm with user first
-6. Tool argument names must match the schema exactly (for example, use transaction_type, not type)
+3. If creating a transaction, FIRST use list_accounts to find the correct account_id for the given account name.
+4. If the user wants a chart or visualization, use generate_plot
+5. Return results in a friendly format
+6. If creating data, confirm with user first
+7. Tool argument names must match the schema exactly (e.g. use transaction_type, not type)
 
 IMPORTANT: When calling tools, respond ONLY with JSON like:
 {{"tool_calls": [{{"name": "tool_name", "arguments": {{"arg1": "value1"}}}}]}}
@@ -221,6 +221,15 @@ If no tools needed, respond with plain text."""
             system_prompt=system_prompt,
             user_input=user_input,
             external_history=conversation_history,
+        )
+
+        estimated_tokens = len(conversation) // 4
+        context_pct = min(
+            100.0, (estimated_tokens / self.config.max_context_tokens) * 100
+        )
+        yield AgentEvent(
+            kind="status",
+            content=f"Analyzing request (Context filled: {context_pct:.1f}%)",
         )
 
         visualizations: list[str] = []
@@ -287,9 +296,15 @@ If no tools needed, respond with plain text."""
                             if content_item.type == "text":
                                 tool_data += content_item.text
 
-                        tool_error = None
                         parsed_data = None
-                        success = True
+
+                        mcp_res = (
+                            res.to_mcp_result()
+                            if hasattr(res, "to_mcp_result")
+                            else res
+                        )
+                        success = not getattr(mcp_res, "isError", False)
+                        tool_error = tool_data if not success else None
 
                         if tool_error:
                             results.append(f"Error: {tool_error}")
@@ -439,8 +454,16 @@ If no tools needed, respond with plain text."""
         if "{" not in response_text:
             return []
 
+        # Find the first { and the last }
+        start_idx = response_text.find("{")
+        end_idx = response_text.rfind("}")
+        if start_idx == -1 or end_idx == -1 or start_idx > end_idx:
+            return []
+
+        json_str = response_text[start_idx : end_idx + 1]
+
         try:
-            data = json.loads(response_text)
+            data = json.loads(json_str)
         except json.JSONDecodeError:
             return []
 
