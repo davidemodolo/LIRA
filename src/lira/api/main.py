@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from typing import Generator
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +24,7 @@ from lira.db.repositories import (
     CategoryRepository,
     TransactionRepository,
 )
-from lira.db.session import close_database, get_session, init_database
+from lira.db.session import DatabaseSession, close_database, init_database
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ async def lifespan(app: FastAPI):
 
     init_database()
 
-    with get_session() as session:
+    with DatabaseSession() as session:
         category_repo = CategoryRepository(session)
         default_categories = [
             ("Groceries", "🛒", "#4CAF50"),
@@ -78,9 +79,9 @@ app.add_middleware(
 )
 
 
-def get_db() -> Session:
+def get_db() -> Generator[Session, None, None]:
     """Get database session dependency."""
-    return next(get_session())
+    yield from get_session()
 
 
 @app.exception_handler(HTTPException)
