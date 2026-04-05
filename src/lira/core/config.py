@@ -17,9 +17,7 @@ class Settings(BaseSettings):
     agent_temperature: float = 0.7
     agent_max_context_tokens: int = 8192
 
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()

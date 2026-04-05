@@ -506,9 +506,7 @@ async def calculate_tax(
         proceeds = Decimal(str(sale["proceeds"]))
         cost_basis = Decimal(str(sale.get("cost_basis", 0)))
 
-        purchase_date = datetime.fromisoformat(sale["purchase_date"]).replace(
-            tzinfo=None
-        )
+        purchase_date = datetime.fromisoformat(sale["purchase_date"]).replace(tzinfo=None)
         sale_date = datetime.fromisoformat(sale["sale_date"]).replace(tzinfo=None)
 
         days_held = (sale_date - purchase_date).days

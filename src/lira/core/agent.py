@@ -42,9 +42,7 @@ class AgentConfig:
     max_iterations: int = field(default_factory=lambda: settings.agent_max_iterations)
     temperature: float = field(default_factory=lambda: settings.agent_temperature)
     timeout: int | None = field(default_factory=lambda: settings.agent_timeout)
-    max_context_tokens: int = field(
-        default_factory=lambda: settings.agent_max_context_tokens
-    )
+    max_context_tokens: int = field(default_factory=lambda: settings.agent_max_context_tokens)
     enable_self_correction: bool = True
     history_turn_limit: int = 30
 
@@ -114,12 +112,8 @@ class Agent:
             tools_desc.append(f"- {tool.name}: {tool.description}")
 
             schema = tool.parameters or {}
-            properties = (
-                schema.get("properties", {}) if isinstance(schema, dict) else {}
-            )
-            required = (
-                set(schema.get("required", [])) if isinstance(schema, dict) else set()
-            )
+            properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+            required = set(schema.get("required", [])) if isinstance(schema, dict) else set()
 
             if properties:
                 tools_desc.append("  args:")
@@ -224,9 +218,7 @@ If no tools needed, respond with plain text."""
         )
 
         estimated_tokens = len(conversation) // 4
-        context_pct = min(
-            100.0, (estimated_tokens / self.config.max_context_tokens) * 100
-        )
+        context_pct = min(100.0, (estimated_tokens / self.config.max_context_tokens) * 100)
         yield AgentEvent(
             kind="status",
             content=f"Analyzing request (Context filled: {context_pct:.1f}%)",
@@ -253,9 +245,7 @@ If no tools needed, respond with plain text."""
                 tool_calls = self._parse_tool_calls(response_text)
                 if not tool_calls:
                     self._state = AgentState.COMPLETE
-                    final_message = (
-                        response_text or "I didn't understand that. Can you rephrase?"
-                    )
+                    final_message = response_text or "I didn't understand that. Can you rephrase?"
                     response = AgentResponse(
                         state=AgentState.COMPLETE,
                         message=final_message,
@@ -263,9 +253,7 @@ If no tools needed, respond with plain text."""
                         visualizations=visualizations,
                         tool_calls=resolved_calls,
                     )
-                    self._append_history(
-                        user_input=user_input, assistant_output=final_message
-                    )
+                    self._append_history(user_input=user_input, assistant_output=final_message)
                     yield AgentEvent(
                         kind="final",
                         content=final_message,
@@ -298,11 +286,7 @@ If no tools needed, respond with plain text."""
 
                         parsed_data = None
 
-                        mcp_res = (
-                            res.to_mcp_result()
-                            if hasattr(res, "to_mcp_result")
-                            else res
-                        )
+                        mcp_res = res.to_mcp_result() if hasattr(res, "to_mcp_result") else res
                         success = not getattr(mcp_res, "isError", False)
                         tool_error = tool_data if not success else None
 
@@ -315,9 +299,7 @@ If no tools needed, respond with plain text."""
                                 parsed_data = tool_data
 
                             results.append(parsed_data)
-                            if tool_name == "generate_plot" and isinstance(
-                                parsed_data, dict
-                            ):
+                            if tool_name == "generate_plot" and isinstance(parsed_data, dict):
                                 img = parsed_data.get("image_base64")
                                 if img:
                                     visualizations.append(img)
@@ -361,9 +343,7 @@ If no tools needed, respond with plain text."""
                     visualizations=visualizations,
                 )
                 self._append_history(user_input=user_input, assistant_output=message)
-                yield AgentEvent(
-                    kind="error", content=message, payload={"response": response}
-                )
+                yield AgentEvent(kind="error", content=message, payload={"response": response})
                 return
 
         # If we loop out
