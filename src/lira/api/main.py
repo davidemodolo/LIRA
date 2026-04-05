@@ -7,24 +7,34 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from typing import Generator
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from lira import __version__
+from lira.core.agent import Agent, AgentConfig
+from lira.api.schemas import (
+    AgentChatRequest,
+    AgentChatResponse,
+    ChatMessage,
+    SimpleQueryRequest,
+    SimpleQueryResponse,
+)
+from lira.mcp.tools import get_portfolio as mcp_get_portfolio
 from lira.db.repositories import (
     AccountRepository,
     CategoryRepository,
     TransactionRepository,
 )
-from lira.db.session import DatabaseSession, close_database, init_database
+from lira.db.session import DatabaseSession, close_database, get_session, init_database
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +89,11 @@ app.add_middleware(
 )
 
 
+_DASHBOARD_TEMPLATE_PATH = (
+    Path(__file__).resolve().parent.parent / "web" / "templates" / "dashboard.html"
+)
+
+
 def get_db() -> Generator[Session, None, None]:
     """Get database session dependency."""
     yield from get_session()
@@ -117,6 +132,12 @@ async def root() -> dict[str, Any]:
         "version": __version__,
         "description": "AI-native personal finance and investment tracker",
     }
+
+
+@app.get("/dashboard")
+async def dashboard() -> FileResponse:
+    """Serve the web dashboard UI."""
+    return FileResponse(_DASHBOARD_TEMPLATE_PATH)
 
 
 @app.get("/health")
@@ -159,7 +180,9 @@ class UpdateTransactionRequest(BaseModel):
 
 
 @app.get("/accounts")
-async def list_accounts(db: Session = Depends(get_db)) -> dict[str, list[dict[str, Any]]]:
+async def list_accounts(
+    db: Session = Depends(get_db),
+) -> dict[str, list[dict[str, Any]]]:
     """List all accounts."""
     repo = AccountRepository(db)
     accounts = repo.get_all(active_only=True)
@@ -225,7 +248,9 @@ async def get_account(account_id: int, db: Session = Depends(get_db)) -> dict[st
 
 
 @app.delete("/accounts/{account_id}")
-async def delete_account(account_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+async def delete_account(
+    account_id: int, db: Session = Depends(get_db)
+) -> dict[str, str]:
     """Delete (deactivate) an account."""
     repo = AccountRepository(db)
     if not repo.delete(account_id):
@@ -297,7 +322,9 @@ async def create_transaction(
 
 
 @app.get("/transactions/{transaction_id}")
-async def get_transaction(transaction_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+async def get_transaction(
+    transaction_id: int, db: Session = Depends(get_db)
+) -> dict[str, Any]:
     """Get a specific transaction."""
     repo = TransactionRepository(db)
     transaction = repo.get(transaction_id)
@@ -350,7 +377,9 @@ async def update_transaction(
 
 
 @app.delete("/transactions/{transaction_id}")
-async def delete_transaction(transaction_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+async def delete_transaction(
+    transaction_id: int, db: Session = Depends(get_db)
+) -> dict[str, str]:
     """Delete a transaction."""
     repo = TransactionRepository(db)
     if not repo.delete(transaction_id):
@@ -359,7 +388,9 @@ async def delete_transaction(transaction_id: int, db: Session = Depends(get_db))
 
 
 @app.get("/categories")
-async def list_categories(db: Session = Depends(get_db)) -> dict[str, list[dict[str, Any]]]:
+async def list_categories(
+    db: Session = Depends(get_db),
+) -> dict[str, list[dict[str, Any]]]:
     """List all categories."""
     repo = CategoryRepository(db)
     categories = repo.get_all()
@@ -379,78 +410,86 @@ async def list_categories(db: Session = Depends(get_db)) -> dict[str, list[dict[
 @app.get("/portfolio")
 async def get_portfolio(db: Session = Depends(get_db)) -> dict[str, Any]:
     """Get portfolio summary."""
-    from sqlalchemy import select
-
-    from lira.db.models import Holding
-
-    holdings = db.execute(select(Holding)).scalars().all()
-
-    total_value = 0.0
-    total_cost = 0.0
-
-    holding_list = []
-    for h in holdings:
-        value = float(h.quantity * (h.current_price or h.average_cost))
-        cost = float(h.quantity * h.average_cost)
-        total_value += value
-        total_cost += cost
-
-        holding_list.append(
-            {
-                "id": h.id,
-                "symbol": h.symbol,
-                "name": h.name,
-                "quantity": float(h.quantity),
-                "average_cost": float(h.average_cost),
-                "current_price": float(h.current_price or h.average_cost),
-                "market_value": value,
-                "gain_loss": value - cost,
-                "gain_loss_percent": ((value - cost) / cost * 100) if cost else 0,
-            }
-        )
-
+    snapshot = await mcp_get_portfolio()
     return {
-        "holdings": holding_list,
+        "holdings": snapshot["holdings"],
         "summary": {
-            "total_value": total_value,
-            "total_cost": total_cost,
-            "total_gain_loss": total_value - total_cost,
-            "total_gain_loss_percent": (
-                ((total_value - total_cost) / total_cost * 100) if total_cost else 0
-            ),
+            "total_value": snapshot["summary"]["total_value"],
+            "total_cost": snapshot["summary"]["total_cost"],
+            "total_gain_loss": snapshot["summary"]["total_gain_loss"],
+            "total_gain_loss_percent": snapshot["summary"]["total_gain_loss_percent"],
         },
     }
 
 
-@app.post("/agent/query")
-async def agent_query(message: dict[str, str]) -> dict[str, Any]:
-    """Process a natural language query through the agent.
+@app.post("/agent/query", response_model=SimpleQueryResponse)
+async def agent_query(request: SimpleQueryRequest) -> SimpleQueryResponse:
+    """Process a natural language query through the agent (single-turn).
+
+    This endpoint is stateless and does not maintain conversation history.
+    For multi-turn conversations, use /agent/chat.
 
     Args:
-        message: Dict with 'text' key containing the query
+        request: Simple query request with text
 
     Returns:
         Agent response
     """
-    from lira.core.agent import Agent, AgentConfig
-
-    text = message.get("text", "")
-
-    if not text:
-        raise HTTPException(status_code=400, detail="Query text is required")
-
     config = AgentConfig()
     agent = Agent(config=config)
 
-    response = await agent.run(text)
+    response = await agent.run(request.text)
 
-    return {
-        "response": response.message,
-        "state": response.state.value,
-        "iterations": response.iterations,
-        "data": response.data,
-        "error": response.error,
-    }
+    return SimpleQueryResponse(
+        response=response.message,
+        state=(
+            response.state.value if hasattr(response.state, "value") else response.state
+        ),
+        iterations=response.iterations,
+        data=response.data,
+        error=response.error,
+        visualizations=response.visualizations,
+    )
+
+
+@app.post("/agent/chat", response_model=AgentChatResponse)
+async def agent_chat(request: AgentChatRequest) -> AgentChatResponse:
+    """Process a chat message with full conversation history (stateless).
+
+    This endpoint accepts the complete conversation history and returns
+    the updated history with the agent's response. The client is responsible
+    for maintaining and sending the conversation history with each request.
+
+    Args:
+        request: Chat request with messages history and new message
+
+    Returns:
+        Agent response with updated conversation history
+    """
+    config = AgentConfig()
+    agent = Agent(config=config)
+
+    history = [msg.model_dump() for msg in request.messages]
+
+    response = await agent.run(request.new_message, conversation_history=history)
+
+    updated_messages = list(request.messages)
+    updated_messages.append(
+        ChatMessage(
+            role="assistant",
+            content=response.message,
+            timestamp=datetime.now(timezone.utc),
+        )
+    )
+
+    return AgentChatResponse(
+        response=response.message,
+        messages=updated_messages,
+        visualizations=response.visualizations,
+        iterations=response.iterations,
+        error=response.error,
+        session_id=request.session_id,
+    )
 
 
 def main() -> None:
