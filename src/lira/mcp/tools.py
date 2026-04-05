@@ -34,9 +34,9 @@ init_database()
 
 try:
     import matplotlib
-    import matplotlib.pyplot as plt
 
     matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 except ImportError:
     matplotlib = None  # type: ignore
     plt = None  # type: ignore
@@ -488,7 +488,10 @@ async def get_transactions(
             query = query.filter(Transaction.account_id == account_id)
 
         if category:
-            query = query.join(Category).filter(Category.name.ilike(f"%{category}%"))
+            # Explicit onclause avoids AmbiguousForeignKeysError (two FKs to categories)
+            query = query.join(Category, Transaction.category_id == Category.id).filter(
+                Category.name.ilike(f"%{category}%")
+            )
 
         if start_date:
             query = query.filter(Transaction.date >= datetime.fromisoformat(start_date))
@@ -497,7 +500,9 @@ async def get_transactions(
             query = query.filter(Transaction.date <= datetime.fromisoformat(end_date))
 
         if transaction_type:
-            query = query.filter(Transaction.transaction_type == transaction_type)
+            query = query.filter(
+                Transaction.transaction_type == TransactionType(transaction_type)
+            )
 
         if min_amount is not None:
             query = query.filter(Transaction.amount >= min_amount)
@@ -780,7 +785,7 @@ async def get_categories() -> list[dict[str, Any]]:
 
 @mcp.tool()
 async def create_category(
-    name: str, parent_id: int | None = None, is_system: bool = False
+    name: str, parent_id: int | str | None = None, is_system: bool = False
 ) -> dict[str, Any]:
     """Create a new transaction category.
 
@@ -788,7 +793,7 @@ async def create_category(
 
     Args:
         name: The name of the category (e.g. "FOOD", "groceries")
-        parent_id: Optional parent category ID
+        parent_id: Optional parent category ID (integer) or parent category name (string)
         is_system: Whether this is a system category
 
     Returns:
@@ -799,6 +804,22 @@ async def create_category(
     from lira.db.session import DatabaseSession
 
     with DatabaseSession() as session:
+        # Resolve parent_id: accept either an integer ID or a category name string
+        resolved_parent_id: int | None = None
+        if parent_id is not None:
+            if isinstance(parent_id, int):
+                resolved_parent_id = parent_id
+            else:
+                try:
+                    resolved_parent_id = int(parent_id)
+                except (ValueError, TypeError):
+                    # Treat as a name — look up the parent by name
+                    parent_cat = session.execute(
+                        select(Category).where(func.lower(Category.name) == str(parent_id).lower())
+                    ).scalar_one_or_none()
+                    if parent_cat:
+                        resolved_parent_id = parent_cat.id
+
         # Check if category already exists to avoid duplicates
         existing = session.execute(
             select(Category).where(func.lower(Category.name) == name.lower())
@@ -813,7 +834,7 @@ async def create_category(
 
         category = Category(
             name=name,
-            parent_id=parent_id,
+            parent_id=resolved_parent_id,
             is_system=is_system,
         )
         session.add(category)

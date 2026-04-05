@@ -322,6 +322,7 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            user-select: text;
         }
 
         .msg-user {
@@ -1317,6 +1318,11 @@
             }
         } else if (ev.kind === 'mutation_preview') {
             traceEvents.push(ev);
+        } else if (ev.kind === 'final' && ev.content) {
+            onToken(ev.content);
+            msgEl._raw = (msgEl._raw || '') + ev.content;
+            msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(msgEl._raw);
+            document.getElementById('chat-messages').scrollTop = 99999;
         }
     }
 

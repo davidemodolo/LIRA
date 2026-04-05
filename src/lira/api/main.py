@@ -26,12 +26,16 @@ if TYPE_CHECKING:
 from lira.api.routes import dashboard as dashboard_routes
 from lira.api.routes import plots as plots_routes
 
-logger = logging.getLogger(__name__)
-
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    force=True,
 )
+# Suppress noisy third-party loggers
+for _noisy in ("httpx", "httpcore", "sqlalchemy.engine", "yfinance", "urllib3"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 
 # Basic Pydantic models for the chat
