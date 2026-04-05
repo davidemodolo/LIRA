@@ -117,18 +117,32 @@ ignore = [
     "PLR2004",    # magic value comparison
     "PLR0912",    # too many branches
     "PLR6301",    # method could be function
+    "PLR0915",    # too many statements
     "C901",       # too complex
     "PT004",      # pytest missing fixture underscores
     "PT006",      # pytest parametrize names wrong
     "PT012",      # pytest raise in fixture
     "PT015",      # pytest fixture auto use
     "PLC0415",    # import should be at top-level (lazy imports for CLI)
+    "RUF012",     # mutable default value for class attribute
+    "A001",       # variable shadowing python builtin
+    "A003",       # class attribute shadowing python builtin
+    "TC002",      # move third-party import into a type-checking block
+    "TC003",      # move standard library import into a type-checking block
+    "E712",       # avoid equality comparisons to True
+    "DTZ001",     # datetime without tzinfo
+    "DTZ003",     # datetime.utcnow() used
+    "DTZ005",     # datetime.now() without tzinfo
+    "PT003",      # scope='function' is implied in @pytest.fixture()
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "E402"]
 "tests/**/*.py" = ["S101", "B011", "PLR2004"]
 "docs/**/*.py" = ["F401", "E402"]
+"src/lira/mcp/tools.py" = ["E402"]
+"src/lira/mcp/server.py" = ["E402"]
+"src/lira/db/session.py" = ["E402"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

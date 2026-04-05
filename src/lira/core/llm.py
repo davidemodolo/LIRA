@@ -18,7 +18,7 @@ class LLMProvider(Protocol):
 
     async def acomplete(self, prompt: str, **kwargs: Any) -> str: ...
 
-    async def astream_complete(
+    def astream_complete(
         self, prompt: str, **kwargs: Any
     ) -> AsyncIterator[str]: ...
 
@@ -106,8 +106,7 @@ class OllamaProvider:
             )
             response.raise_for_status()
             data = response.json()
-            return data.get("response", "").strip()
-
+            return str(data.get("response", "")).strip()
         except httpx.HTTPError as e:
             logger.error("Ollama request failed: %s", e)
             raise RuntimeError(f"Ollama API error: {e}") from e
@@ -300,7 +299,7 @@ class GroqProvider:
             )
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
+            return str(data["choices"][0]["message"]["content"]).strip()
         except httpx.HTTPError as e:
             logger.error("Groq request failed: %s", e)
             raise RuntimeError(f"Groq API error: {e}") from e

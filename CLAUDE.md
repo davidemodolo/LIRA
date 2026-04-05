@@ -24,23 +24,23 @@ autonomous ReAct agentic loop.
 LIRA/
 ├── src/lira/              # Main package
 │   ├── __init__.py        # Package init with version
-│   ├── core/              # Agentic loop, tools, exceptions
+│   ├── core/              # Agentic loop, config, exceptions, LLM logic
 │   │   ├── agent.py       # ReAct loop implementation
-│   │   ├── tools.py       # Tool registry and base classes
-│   │   └── exceptions.py  # Custom exceptions
+│   │   ├── config.py      # App configuration
+│   │   ├── exceptions.py  # Custom exceptions
+│   │   └── llm.py         # LLM interaction layer
 │   ├── db/                # Database layer
 │   │   ├── models.py      # SQLAlchemy models
-│   │   ├── session.py     # Session management
-│   │   └── versioning.py  # Git-like versioning
+│   │   └── session.py     # Session management
 │   ├── mcp/               # MCP Server
+│   │   ├── prompts.py     # MCP prompt implementations
 │   │   ├── server.py      # MCP server implementation
-│   │   └── tools/         # MCP tool implementations
+│   │   └── tools.py       # MCP tool implementations
 │   ├── api/               # FastAPI endpoints
-│   │   ├── main.py        # App entry point
-│   │   └── routes/        # Route handlers
+│   │   └── main.py        # App entry point
 │   ├── cli/               # CLI interface
 │   │   └── console.py     # Rich console app
-│   └── services/          # Business logic
+│   └── web/               # Web UI templates
 ├── tests/                 # Test suite
 ├── docs/                  # Documentation
 └── pyproject.toml         # Project configuration
@@ -81,25 +81,22 @@ uv run alembic revision --autogenerate -m "description"
 
 ## Current Status
 
-The project is in early development (v0.1.0-alpha). The following modules are
-implemented as stubs:
+The project is in active development. The following modules have been implemented:
 
 - [x] Package structure with pyproject.toml
-- [x] Core agent skeleton
-- [x] Database models (stubs)
-- [x] MCP server (stubs)
-- [x] CLI console (stubs)
-- [x] API routes (stubs)
+- [x] Core agent logic and LLM interaction layer
+- [x] Database models and session management
+- [x] MCP server, core tools, and prompt implementations
+- [x] Basic CLI console app
+- [x] API framework integration
 
 ## Active Development
 
 See the project board or issues for current tasks. Key areas for development:
 
-1. Complete SQLAlchemy models for accounts, transactions, portfolios
-2. Implement MCP tool: `execute_sql_select`, `execute_sql_mutate`
-3. Implement ReAct agent loop
-4. Add HITL diff engine for mutations
-5. Create web dashboard templates
+1. Add HITL diff engine for mutations
+2. Create web dashboard templates
+3. Expand investment tracking intelligence
 
 ## Important Notes
 

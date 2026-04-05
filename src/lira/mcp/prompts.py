@@ -2,6 +2,7 @@
 
 from lira.mcp.server import mcp
 
+
 @mcp.prompt()
 def financial_analysis(query: str) -> str:
     """A prompt to analyze financial data."""

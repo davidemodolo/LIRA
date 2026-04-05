@@ -9,15 +9,14 @@ from __future__ import annotations
 import base64
 import io
 import logging
-from typing import Any
-import yfinance as yf
-
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
+
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-from lira.mcp.server import mcp
 from lira.db.models import (
     Account,
     AccountType,
@@ -27,6 +26,7 @@ from lira.db.models import (
     TransactionType,
 )
 from lira.db.session import DatabaseSession
+from lira.mcp.server import mcp
 
 try:
     import matplotlib
@@ -34,8 +34,8 @@ try:
 
     matplotlib.use("Agg")
 except ImportError:
-    matplotlib = None
-    plt = None
+    matplotlib = None  # type: ignore
+    plt = None  # type: ignore
 
 
 @mcp.tool()
@@ -245,8 +245,9 @@ async def execute_sql(
     Returns:
         Query results
     """
-    from lira.db.session import DatabaseSession
     from sqlalchemy import text
+
+    from lira.db.session import DatabaseSession
 
     params = params or {}
     normalized = query.strip().upper()
@@ -520,11 +521,10 @@ async def calculate_tax(
                 long_term_gains += gain_loss
             else:
                 long_term_losses += abs(gain_loss)
+        elif gain_loss > 0:
+            short_term_gains += gain_loss
         else:
-            if gain_loss > 0:
-                short_term_gains += gain_loss
-            else:
-                short_term_losses += abs(gain_loss)
+            short_term_losses += abs(gain_loss)
 
         detailed.append(
             {

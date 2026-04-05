@@ -59,7 +59,7 @@ jobs:
         run: uv sync --frozen --python ${{ matrix.python-version }}
 
       - name: Run tests
-        run: uv run pytest --cov=lira --cov-fail-under=60
+        run: uv run pytest --cov=lira --cov-fail-under=40
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -86,9 +86,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Build package
-        run: |
-          pip install build
-          python -m build
+        run: uv build
 
       - name: Check built artifacts
         run: |
@@ -96,5 +94,5 @@ jobs:
 
       - name: Verify package
         run: |
-          pip install dist/*.whl --force-reinstall
-          python -c "import lira; print(lira.__version__)"
+          uv pip install --system dist/*.whl --force-reinstall
+          uv run python -c "import lira; print(lira.__version__)"

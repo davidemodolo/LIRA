@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+
 from lira.api.main import app
 from lira.version import __version__
 

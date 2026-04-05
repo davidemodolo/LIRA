@@ -14,10 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from lira.version import __version__
 from lira.core.agent import Agent, AgentConfig
 from lira.db.session import DatabaseSession, init_database
-from lira.mcp.server import mcp
+from lira.version import __version__
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterator
@@ -92,7 +91,7 @@ async def health_check() -> dict[str, str]:
 async def chat_with_agent(request: AgentChatRequest) -> Any:
     """Chat with the L.I.R.A. agent."""
     if not request.messages:
-        raise HTTPException(status_id=400, detail="Messages list cannot be empty")
+        raise HTTPException(status_code=400, detail="Messages list cannot be empty")
 
     prompt = request.messages[-1].content
     agent = Agent(AgentConfig())
@@ -101,8 +100,10 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
         if request.stream:
 
             async def generate() -> AsyncGenerator[str, None]:
+                import json
+                from dataclasses import asdict
                 async for event in agent.run_stream(prompt):
-                    yield event.model_dump_json() + "\n"
+                    yield json.dumps(asdict(event)) + "\n"
 
             return StreamingResponse(generate(), media_type="application/x-ndjson")
 
@@ -110,7 +111,7 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
         return AgentChatResponse(
             message=ChatMessage(role="assistant", content=result),
             final_state=agent.state,
-            usage=agent.llm_provider.get_usage_stats(),
+            usage={},
         )
     except Exception as e:
         logger.exception("Agent run failed")

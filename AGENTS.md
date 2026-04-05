@@ -13,13 +13,13 @@ investment tracker. It uses an MCP (Model Context Protocol) architecture with a 
 
 ```
 src/lira/
-├── core/          # Agentic loop, ReAct engine, tool registry
-├── db/            # SQLAlchemy models, versioning, migrations
-├── mcp/           # MCP server and tool implementations
+├── core/          # Agentic loop, config, exceptions, LLM logic
+├── db/            # SQLAlchemy models, session management
+├── mcp/           # MCP server, prompts, and tool implementations
 ├── api/           # FastAPI REST endpoints
 ├── cli/           # Rich-based terminal interface
 ├── web/           # Web dashboard (templates)
-└── services/      # Business logic layer
+└── version.py     # Version information
 ```
 
 ## Key Design Principles

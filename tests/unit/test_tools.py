@@ -1,8 +1,9 @@
-import pytest
 from contextlib import contextmanager
 
+import pytest
+
 # we will just import the underlying functions directly
-import lira.mcp.tools as tools
+from lira.mcp import tools
 
 
 @pytest.fixture(autouse=True)
