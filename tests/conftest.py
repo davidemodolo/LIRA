@@ -81,6 +81,7 @@ def sample_category(session: Session) -> Category:
     session.commit()
     return category
 
+
 @pytest.fixture
 def sample_payment_method(session: Session, sample_account: Account) -> PaymentMethod:
     pm = PaymentMethod(
@@ -92,7 +93,6 @@ def sample_payment_method(session: Session, sample_account: Account) -> PaymentM
     session.add(pm)
     session.commit()
     return pm
-
 
 
 @pytest.fixture

@@ -62,7 +62,9 @@ class AgentConfig:
     max_iterations: int = field(default_factory=lambda: settings.agent_max_iterations)
     temperature: float = field(default_factory=lambda: settings.agent_temperature)
     timeout: int | None = field(default_factory=lambda: settings.agent_timeout)
-    max_context_tokens: int = field(default_factory=lambda: settings.agent_max_context_tokens)
+    max_context_tokens: int = field(
+        default_factory=lambda: settings.agent_max_context_tokens
+    )
     enable_self_correction: bool = True
     history_turn_limit: int = 30
     hitl_enabled: bool = True
@@ -113,13 +115,24 @@ def _build_mutation_preview(tool_calls: list[dict[str, Any]]) -> list[dict[str, 
         for call in tool_calls:
             tool = call["name"]
             args = call.get("arguments", {})
-            preview: dict[str, Any] = {"tool": tool, "arguments": args, "before": None, "after": None}
+            preview: dict[str, Any] = {
+                "tool": tool,
+                "arguments": args,
+                "before": None,
+                "after": None,
+            }
 
             if tool == "create_transaction":
                 cat_name = args.get("category_name") or args.get("category_id")
-                sec_cat_name = args.get("secondary_category_name") or args.get("secondary_category_id")
-                pm_name = args.get("payment_method_name") or args.get("payment_method_id")
-                preview["description"] = f"Create {args.get('transaction_type', 'transaction')}"
+                sec_cat_name = args.get("secondary_category_name") or args.get(
+                    "secondary_category_id"
+                )
+                pm_name = args.get("payment_method_name") or args.get(
+                    "payment_method_id"
+                )
+                preview["description"] = (
+                    f"Create {args.get('transaction_type', 'transaction')}"
+                )
                 preview["before"] = None
                 preview["after"] = {
                     "type": args.get("transaction_type"),
@@ -155,7 +168,10 @@ def _build_mutation_preview(tool_calls: list[dict[str, Any]]) -> list[dict[str, 
                     select(PaymentMethod).where(PaymentMethod.name == pm_name)
                 ).scalar_one_or_none()
                 preview["description"] = f"Update balance of '{pm_name}'"
-                preview["before"] = {"name": pm_name, "balance": float(pm.balance) if pm else None}
+                preview["before"] = {
+                    "name": pm_name,
+                    "balance": float(pm.balance) if pm else None,
+                }
                 preview["after"] = {"name": pm_name, "balance": args.get("new_balance")}
 
             elif tool == "transfer_between_payment_methods":
@@ -170,14 +186,22 @@ def _build_mutation_preview(tool_calls: list[dict[str, Any]]) -> list[dict[str, 
                 ).scalar_one_or_none()
                 from_bal = float(from_pm.balance) if from_pm else None
                 to_bal = float(to_pm.balance) if to_pm else None
-                preview["description"] = f"Transfer {amount} from '{from_name}' to '{to_name}'"
+                preview["description"] = (
+                    f"Transfer {amount} from '{from_name}' to '{to_name}'"
+                )
                 preview["before"] = {
                     from_name: from_bal,
                     to_name: to_bal,
                 }
                 preview["after"] = {
-                    from_name: round(from_bal - float(amount), 4) if from_bal is not None else None,
-                    to_name: round(to_bal + float(amount), 4) if to_bal is not None else None,
+                    from_name: (
+                        round(from_bal - float(amount), 4)
+                        if from_bal is not None
+                        else None
+                    ),
+                    to_name: (
+                        round(to_bal + float(amount), 4) if to_bal is not None else None
+                    ),
                 }
 
             elif tool == "record_gain_loss":
@@ -188,11 +212,15 @@ def _build_mutation_preview(tool_calls: list[dict[str, Any]]) -> list[dict[str, 
                 ).scalar_one_or_none()
                 cur_bal = float(pm.balance) if pm else None
                 action = "gain" if amount >= 0 else "loss"
-                preview["description"] = f"Record {action} of {abs(amount)} for '{pm_name}'"
+                preview["description"] = (
+                    f"Record {action} of {abs(amount)} for '{pm_name}'"
+                )
                 preview["before"] = {"name": pm_name, "balance": cur_bal}
                 preview["after"] = {
                     "name": pm_name,
-                    "balance": round(cur_bal + amount, 4) if cur_bal is not None else None,
+                    "balance": (
+                        round(cur_bal + amount, 4) if cur_bal is not None else None
+                    ),
                 }
 
             elif tool == "create_category":
@@ -212,8 +240,13 @@ def _build_mutation_preview(tool_calls: list[dict[str, Any]]) -> list[dict[str, 
 
             elif tool == "update_transactions":
                 preview["description"] = "Bulk update transactions"
-                preview["before"] = {"filters": {k: v for k, v in args.items() if k != "dry_run"}}
-                preview["after"] = {"category_id": args.get("category_id"), "dry_run": args.get("dry_run", True)}
+                preview["before"] = {
+                    "filters": {k: v for k, v in args.items() if k != "dry_run"}
+                }
+                preview["after"] = {
+                    "category_id": args.get("category_id"),
+                    "dry_run": args.get("dry_run", True),
+                }
 
             elif tool == "create_persistent_plot":
                 preview["description"] = f"Add persistent plot '{args.get('name')}'"
@@ -293,7 +326,9 @@ async def _execute_tool_calls(
                             description=f"{tool_name}({_json.dumps(arguments)[:200]})",
                         )
                         session.add(entry)
-                        audit_entries.append({"tool": tool_name, "record_id": record_id})
+                        audit_entries.append(
+                            {"tool": tool_name, "record_id": record_id}
+                        )
 
         except Exception as e:
             error_text = f"Tool failure: {tool_name} - {e!s}"
@@ -384,8 +419,12 @@ class Agent:
             tools_desc.append(f"- {tool.name}: {tool.description}")
 
             schema = tool.parameters or {}
-            properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
-            required = set(schema.get("required", [])) if isinstance(schema, dict) else set()
+            properties = (
+                schema.get("properties", {}) if isinstance(schema, dict) else {}
+            )
+            required = (
+                set(schema.get("required", [])) if isinstance(schema, dict) else set()
+            )
 
             if properties:
                 tools_desc.append("  args:")
@@ -502,9 +541,13 @@ class Agent:
 
         init_msgs: list[str] = []
         if self._init_status["accounts_needed"]:
-            init_msgs.append("A default 'Personal' account will be created automatically")
+            init_msgs.append(
+                "A default 'Personal' account will be created automatically"
+            )
         if self._init_status["currency_needed"]:
-            init_msgs.append("Ask the user for their base currency (e.g., USD, EUR, GBP)")
+            init_msgs.append(
+                "Ask the user for their base currency (e.g., USD, EUR, GBP)"
+            )
         if self._init_status["payment_methods_needed"]:
             init_msgs.append(
                 "Ask the user for their payment methods with their starting balances (e.g., 'Cash: 100, Revolut: 500, BBVA: 200')"
@@ -579,7 +622,9 @@ If no tools needed, respond with plain text."""
         )
 
         estimated_tokens = len(conversation) // 4
-        context_pct = min(100.0, (estimated_tokens / self.config.max_context_tokens) * 100)
+        context_pct = min(
+            100.0, (estimated_tokens / self.config.max_context_tokens) * 100
+        )
         yield AgentEvent(
             kind="status",
             content=f"Analyzing request (Context filled: {context_pct:.1f}%)",
@@ -602,7 +647,9 @@ If no tools needed, respond with plain text."""
                     yield AgentEvent(kind="llm_token", content=chunk)
 
                 response_text = self._clean_response("".join(llm_chunks))
-                logger.info(f"LLM response (len={len(response_text)}): {response_text[:300]}...")
+                logger.info(
+                    f"LLM response (len={len(response_text)}): {response_text[:300]}..."
+                )
 
                 tool_calls = self._parse_tool_calls(response_text)
                 logger.info(f"Parsed tool_calls: {tool_calls}")
@@ -612,7 +659,9 @@ If no tools needed, respond with plain text."""
                         "No tool calls parsed from LLM response, ending with text response"
                     )
                     self._state = AgentState.COMPLETE
-                    final_message = response_text or "I didn't understand that. Can you rephrase?"
+                    final_message = (
+                        response_text or "I didn't understand that. Can you rephrase?"
+                    )
                     response = AgentResponse(
                         state=AgentState.COMPLETE,
                         message=final_message,
@@ -620,7 +669,9 @@ If no tools needed, respond with plain text."""
                         visualizations=visualizations,
                         tool_calls=resolved_calls,
                     )
-                    self._append_history(user_input=user_input, assistant_output=final_message)
+                    self._append_history(
+                        user_input=user_input, assistant_output=final_message
+                    )
                     yield AgentEvent(
                         kind="final",
                         content=final_message,
@@ -655,7 +706,11 @@ If no tools needed, respond with plain text."""
                                 if content_item.type == "text":
                                     tool_data += content_item.text
 
-                            mcp_res = res.to_mcp_result() if hasattr(res, "to_mcp_result") else res
+                            mcp_res = (
+                                res.to_mcp_result()
+                                if hasattr(res, "to_mcp_result")
+                                else res
+                            )
                             success = not getattr(mcp_res, "isError", False)
                             tool_error = tool_data if not success else None
 
@@ -668,7 +723,9 @@ If no tools needed, respond with plain text."""
                                     parsed_data = tool_data
 
                                 read_results.append(parsed_data)
-                                if tool_name == "generate_plot" and isinstance(parsed_data, dict):
+                                if tool_name == "generate_plot" and isinstance(
+                                    parsed_data, dict
+                                ):
                                     img = parsed_data.get("image_base64")
                                     if img:
                                         visualizations.append(img)
@@ -695,7 +752,9 @@ If no tools needed, respond with plain text."""
                                 },
                             )
 
-                    tool_results_text = "Tool Results:\n" + self._format_results(read_results)
+                    tool_results_text = "Tool Results:\n" + self._format_results(
+                        read_results
+                    )
                     conversation += f"\n\nAssistant (Tool call): {json.dumps({'tool_calls': read_calls})}\n\nSystem: {tool_results_text}\n\nRespond with JSON tool call or plain text:"
 
                     if not mutation_calls:
@@ -726,7 +785,9 @@ If no tools needed, respond with plain text."""
                         tool_calls=resolved_calls,
                         pending_tool_calls=mutation_calls,
                     )
-                    self._append_history(user_input=user_input, assistant_output=preview_message)
+                    self._append_history(
+                        user_input=user_input, assistant_output=preview_message
+                    )
                     yield AgentEvent(
                         kind="final",
                         content=preview_message,
@@ -759,7 +820,11 @@ If no tools needed, respond with plain text."""
                             if content_item.type == "text":
                                 tool_data += content_item.text
 
-                        mcp_res = res.to_mcp_result() if hasattr(res, "to_mcp_result") else res
+                        mcp_res = (
+                            res.to_mcp_result()
+                            if hasattr(res, "to_mcp_result")
+                            else res
+                        )
                         success = not getattr(mcp_res, "isError", False)
                         tool_error = tool_data if not success else None
 
@@ -772,7 +837,9 @@ If no tools needed, respond with plain text."""
                                 parsed_data = tool_data
 
                             results.append(parsed_data)
-                            if tool_name == "generate_plot" and isinstance(parsed_data, dict):
+                            if tool_name == "generate_plot" and isinstance(
+                                parsed_data, dict
+                            ):
                                 img = parsed_data.get("image_base64")
                                 if img:
                                     visualizations.append(img)
@@ -813,7 +880,9 @@ If no tools needed, respond with plain text."""
                     visualizations=visualizations,
                 )
                 self._append_history(user_input=user_input, assistant_output=message)
-                yield AgentEvent(kind="error", content=message, payload={"response": response})
+                yield AgentEvent(
+                    kind="error", content=message, payload={"response": response}
+                )
                 return
 
         # If we loop out

@@ -86,9 +86,13 @@ class PaymentMethod(Base):
         Integer, ForeignKey("accounts.id"), nullable=True
     )
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
 
-    account: Mapped[Account | None] = relationship("Account", back_populates="payment_methods")
+    account: Mapped[Account | None] = relationship(
+        "Account", back_populates="payment_methods"
+    )
     transactions: Mapped[list[Transaction]] = relationship(
         "Transaction", back_populates="payment_method"
     )
@@ -128,7 +132,9 @@ class Account(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
@@ -164,7 +170,9 @@ class Category(Base):
     icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
     color: Mapped[str | None] = mapped_column(String(7), nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
 
     parent: Mapped[Category | None] = relationship(
         "Category", remote_side=[id], back_populates="children"
@@ -183,15 +191,21 @@ class Transaction(Base):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=False)
-    category_id: Mapped[int] = mapped_column(Integer, ForeignKey("categories.id"), nullable=False)
+    account_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("accounts.id"), nullable=False
+    )
+    category_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("categories.id"), nullable=False
+    )
     secondary_category_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("categories.id"), nullable=False
     )
     payment_method_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("payment_methods.id"), nullable=False
     )
-    transaction_type: Mapped[TransactionType] = mapped_column(Enum(TransactionType), nullable=False)
+    transaction_type: Mapped[TransactionType] = mapped_column(
+        Enum(TransactionType), nullable=False
+    )
     amount: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     description: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -201,13 +215,17 @@ class Transaction(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[str | None] = mapped_column(String(500), nullable=True)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
     account: Mapped[Account] = relationship("Account", back_populates="transactions")
-    category: Mapped[Category | None] = relationship("Category", foreign_keys=[category_id])
+    category: Mapped[Category | None] = relationship(
+        "Category", foreign_keys=[category_id]
+    )
     secondary_category: Mapped[Category | None] = relationship(
         "Category", foreign_keys=[secondary_category_id]
     )
@@ -235,7 +253,9 @@ class Portfolio(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
@@ -261,7 +281,9 @@ class Holding(Base):
     __tablename__ = "holdings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    portfolio_id: Mapped[int] = mapped_column(Integer, ForeignKey("portfolios.id"), nullable=False)
+    portfolio_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("portfolios.id"), nullable=False
+    )
     symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     quantity: Mapped[Decimal] = mapped_column(Numeric(19, 8), nullable=False)
@@ -269,7 +291,9 @@ class Holding(Base):
     current_price: Mapped[Decimal | None] = mapped_column(Numeric(19, 4), nullable=True)
     last_updated: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
@@ -280,7 +304,9 @@ class Holding(Base):
     )
     trades: Mapped[list[Trade]] = relationship("Trade", back_populates="holding")
 
-    __table_args__ = (UniqueConstraint("portfolio_id", "symbol", name="uq_portfolio_symbol"),)
+    __table_args__ = (
+        UniqueConstraint("portfolio_id", "symbol", name="uq_portfolio_symbol"),
+    )
 
 
 class Trade(Base):
@@ -292,19 +318,25 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    portfolio_id: Mapped[int] = mapped_column(Integer, ForeignKey("portfolios.id"), nullable=False)
+    portfolio_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("portfolios.id"), nullable=False
+    )
     holding_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("holdings.id"), nullable=True
     )
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    trade_type: Mapped[TransactionType] = mapped_column(Enum(TransactionType), nullable=False)
+    trade_type: Mapped[TransactionType] = mapped_column(
+        Enum(TransactionType), nullable=False
+    )
     quantity: Mapped[Decimal] = mapped_column(Numeric(19, 8), nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
     fees: Mapped[Decimal] = mapped_column(Numeric(19, 4), default=Decimal("0"))
     total: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
     date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
 
     portfolio: Mapped[Portfolio] = relationship("Portfolio", back_populates="trades")
     holding: Mapped[Holding | None] = relationship("Holding", back_populates="trades")
@@ -325,13 +357,19 @@ class Lot(Base):
     __tablename__ = "lots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    holding_id: Mapped[int] = mapped_column(Integer, ForeignKey("holdings.id"), nullable=False)
-    trade_id: Mapped[int] = mapped_column(Integer, ForeignKey("trades.id"), nullable=False)
+    holding_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("holdings.id"), nullable=False
+    )
+    trade_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("trades.id"), nullable=False
+    )
     quantity: Mapped[Decimal] = mapped_column(Numeric(19, 8), nullable=False)
     remaining: Mapped[Decimal] = mapped_column(Numeric(19, 8), nullable=False)
     cost_basis: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
     purchase_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
 
     holding: Mapped[Holding] = relationship("Holding", back_populates="lots")
     trade: Mapped[Trade] = relationship("Trade", back_populates="lot")
@@ -352,14 +390,18 @@ class LotSale(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     lot_id: Mapped[int] = mapped_column(Integer, ForeignKey("lots.id"), nullable=False)
-    trade_id: Mapped[int] = mapped_column(Integer, ForeignKey("trades.id"), nullable=False)
+    trade_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("trades.id"), nullable=False
+    )
     quantity: Mapped[Decimal] = mapped_column(Numeric(19, 8), nullable=False)
     proceeds: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
     cost_basis: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
     gain_loss: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
     sale_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     is_short_term: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
 
     lot: Mapped[Lot] = relationship("Lot", back_populates="sales")
     trade: Mapped[Trade] = relationship("Trade")
@@ -385,7 +427,9 @@ class DashboardPlot(Base):
     x_key: Mapped[str] = mapped_column(String(50), nullable=False)
     y_key: Mapped[str] = mapped_column(String(50), nullable=False)
     config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
 
 
 class AuditLog(Base):
@@ -401,12 +445,20 @@ class AuditLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     table_name: Mapped[str] = mapped_column(String(100), nullable=False)
     record_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    operation: Mapped[str] = mapped_column(String(20), nullable=False)  # create, update, delete
+    operation: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # create, update, delete
     tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    before_state: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON snapshot
-    after_state: Mapped[str | None] = mapped_column(Text, nullable=True)   # JSON snapshot
+    before_state: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # JSON snapshot
+    after_state: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # JSON snapshot
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
 
     __table_args__ = (
         Index("ix_audit_log_table_record", "table_name", "record_id"),

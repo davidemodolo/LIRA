@@ -213,13 +213,17 @@ async def create_transaction(
 
         # Resolve secondary category name to ID if provided
         if secondary_category_name and not secondary_category_id:
-            secondary_category_id = _resolve_category_name(session, secondary_category_name)
+            secondary_category_id = _resolve_category_name(
+                session, secondary_category_name
+            )
             if not secondary_category_id:
                 raise ValueError(
                     f"Secondary category '{secondary_category_name}' not found. You must create the category first."
                 )
         if not secondary_category_id:
-            raise ValueError("secondary_category_id or secondary_category_name must be provided")
+            raise ValueError(
+                "secondary_category_id or secondary_category_name must be provided"
+            )
 
         # Resolve payment method name to ID if provided
         payment_method = None
@@ -237,7 +241,9 @@ async def create_transaction(
             payment_method = session.query(PaymentMethod).get(payment_method_id)
 
         if not payment_method_id:
-            raise ValueError("payment_method_id or payment_method_name must be provided")
+            raise ValueError(
+                "payment_method_id or payment_method_name must be provided"
+            )
 
         tx_type = TransactionType(transaction_type)
         # Always store a positive amount; the transaction_type determines direction.
@@ -631,7 +637,9 @@ async def calculate_tax(
         proceeds = Decimal(str(sale["proceeds"]))
         cost_basis = Decimal(str(sale.get("cost_basis", 0)))
 
-        purchase_date = datetime.fromisoformat(sale["purchase_date"]).replace(tzinfo=None)
+        purchase_date = datetime.fromisoformat(sale["purchase_date"]).replace(
+            tzinfo=None
+        )
         sale_date = datetime.fromisoformat(sale["sale_date"]).replace(tzinfo=None)
 
         days_held = (sale_date - purchase_date).days
@@ -849,11 +857,15 @@ async def update_transactions(
             query = query.filter(Transaction.description.like(description_pattern))
 
         if start_date:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
             query = query.filter(Transaction.date >= start_dt)
 
         if end_date:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
             query = query.filter(Transaction.date <= end_dt)
 
         matching = query.all()

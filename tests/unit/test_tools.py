@@ -35,7 +35,9 @@ async def test_list_accounts(session, sample_account):
 
 
 @pytest.mark.asyncio
-async def test_create_transaction(session, sample_account, sample_category, sample_payment_method):
+async def test_create_transaction(
+    session, sample_account, sample_category, sample_payment_method
+):
     result = await tools.create_transaction(
         account_id=sample_account.id,
         category_id=sample_category.id,
