@@ -72,6 +72,8 @@ def main(
 
 def run_interactive() -> None:
     """Run the interactive chat interface."""
+    import time
+
     console.print("\n[green]Interactive mode started. Type 'exit' to quit.[/green]\n")
 
     while True:
@@ -85,8 +87,13 @@ def run_interactive() -> None:
             if not user_input.strip():
                 continue
 
+            start_time = time.time()
+            console.print("[cyan]Thinking...[/cyan]")
+
             response = asyncio.run(process_query(user_input))
-            display_response(response)
+
+            elapsed = time.time() - start_time
+            display_response(response, elapsed)
 
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted. Goodbye![/yellow]")
@@ -129,17 +136,22 @@ async def process_query(query: str) -> dict[str, Any]:
     }
 
 
-def display_response(response: dict[str, Any]) -> None:
+def display_response(response: dict[str, Any], elapsed: float = 0) -> None:
     """Display agent response in Rich format.
 
     Args:
         response: Agent response dict
+        elapsed: Time taken in seconds
     """
     if response["error"]:
         console.print(f"[red]Error: {response['error']}[/red]")
         return
 
     console.print("\n[green bold]L.I.R.A.[/green bold]")
+
+    if elapsed > 0:
+        elapsed_str = f"[dim]({elapsed:.1f}s)[/dim]"
+        console.print(f" {elapsed_str}")
 
     message = response["message"]
     if message:
