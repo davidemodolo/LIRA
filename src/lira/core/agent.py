@@ -6,12 +6,13 @@ with self-correction capabilities for SQL errors and edge cases.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, AsyncIterator
 
-from lira.core.llm import OllamaProvider, get_ollama_provider
+from lira.core.llm import OllamaProvider
 from lira.core.tools import Tool, ToolRegistry, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ class AgentConfig:
     timeout: int = 120
     enable_self_correction: bool = True
     ollama_base_url: str = "http://localhost:11434"
+    ollama_keep_alive: str = "30m"
+    history_turn_limit: int = 30
 
 
 @dataclass
@@ -50,6 +53,15 @@ class AgentResponse:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     iterations: int = 0
+
+
+@dataclass
+class AgentEvent:
+    """Incremental event emitted while the agent is running."""
+
+    kind: str
+    content: str = ""
+    payload: dict[str, Any] = field(default_factory=dict)
 
 
 class Agent:
@@ -71,13 +83,21 @@ class Agent:
     ) -> None:
         self.config = config or AgentConfig()
         self.tool_registry = tool_registry or self._create_default_registry()
-        self.llm_provider = llm_provider or get_ollama_provider(
+        self.llm_provider = llm_provider or OllamaProvider(
             base_url=self.config.ollama_base_url,
             model=self.config.model,
+            temperature=self.config.temperature,
+            timeout=self.config.timeout,
+            keep_alive=self.config.ollama_keep_alive,
         )
         self._state = AgentState.IDLE
         self._history: list[dict[str, Any]] = []
         self._tools_schema = self._build_tools_schema()
+
+    @property
+    def state(self) -> str:
+        """Get current agent state."""
+        return self._state
 
     def _create_default_registry(self) -> ToolRegistry:
         """Create default tool registry with CRUD operations."""
@@ -93,7 +113,9 @@ class Agent:
 
         class ListAccountsTool(Tool):
             name = "list_accounts"
-            description = "List all accounts. Returns account details including balance."
+            description = (
+                "List all accounts. Returns account details including balance."
+            )
 
             async def execute(self, **kwargs: Any) -> ToolResult:
                 try:
@@ -156,7 +178,10 @@ class Agent:
                     "type": "object",
                     "properties": {
                         "account_id": {"type": "integer", "description": "Account ID"},
-                        "amount": {"type": "number", "description": "Transaction amount"},
+                        "amount": {
+                            "type": "number",
+                            "description": "Transaction amount",
+                        },
                         "transaction_type": {
                             "type": "string",
                             "enum": ["income", "expense"],
@@ -198,7 +223,10 @@ class Agent:
                 return {
                     "type": "object",
                     "properties": {
-                        "account_id": {"type": "integer", "description": "Account ID (optional)"},
+                        "account_id": {
+                            "type": "integer",
+                            "description": "Account ID (optional)",
+                        },
                         "limit": {
                             "type": "integer",
                             "default": 10,
@@ -213,17 +241,27 @@ class Agent:
             description = "Create a new account"
 
             async def execute(
-                self, name: str, account_type: str = "checking", balance: float = 0.0, **kwargs: Any
+                self,
+                name: str,
+                account_type: str = "checking",
+                balance: float = 0.0,
+                **kwargs: Any,
             ) -> ToolResult:
                 try:
                     with DatabaseSession() as session:
                         repo = AccountRepository(session)
                         a = repo.create(
-                            name=name, account_type=account_type, balance=Decimal(str(balance))
+                            name=name,
+                            account_type=account_type,
+                            balance=Decimal(str(balance)),
                         )
                         return ToolResult(
                             success=True,
-                            data={"id": a.id, "name": a.name, "balance": float(a.balance)},
+                            data={
+                                "id": a.id,
+                                "name": a.name,
+                                "balance": float(a.balance),
+                            },
                         )
                 except Exception as e:
                     return ToolResult(success=False, error=str(e))
@@ -235,7 +273,12 @@ class Agent:
                         "name": {"type": "string", "description": "Account name"},
                         "account_type": {
                             "type": "string",
-                            "enum": ["checking", "savings", "credit_card", "investment"],
+                            "enum": [
+                                "checking",
+                                "savings",
+                                "credit_card",
+                                "investment",
+                            ],
                             "default": "checking",
                         },
                         "balance": {
@@ -258,14 +301,40 @@ class Agent:
         """Build tools description for system prompt."""
         tools_desc = []
         for tool in self.tool_registry._tools.values():
-            schema = tool.get_schema()
             tools_desc.append(f"- {tool.name}: {tool.description}")
 
         return "\n".join(tools_desc)
 
     async def run(self, user_input: str) -> AgentResponse:
-        """Run the agent with user input."""
+        """Run the agent with user input and return the final response."""
+        final_response: AgentResponse | None = None
+
+        async for event in self.run_stream(user_input):
+            if event.kind in {"final", "error"}:
+                final_response = event.payload.get("response")
+
+        if final_response is None:
+            self._state = AgentState.ERROR
+            return AgentResponse(
+                state=AgentState.ERROR,
+                message="I encountered an unexpected runtime state.",
+                error="missing final response",
+            )
+
+        return final_response
+
+    async def run_stream(self, user_input: str) -> AsyncIterator[AgentEvent]:
+        """Run the agent and stream intermediate events.
+
+        Args:
+            user_input: Natural language user query.
+
+        Yields:
+            AgentEvent values describing model output, tool calls, and final result.
+        """
         self._state = AgentState.REASONING
+        yield AgentEvent(kind="status", content="Analyzing request")
+
         system_prompt = f"""You are L.I.R.A., an AI assistant for personal finance management.
 
 Your capabilities:
@@ -288,124 +357,190 @@ IMPORTANT: When calling tools, respond ONLY with JSON like:
 
 If no tools needed, respond with plain text."""
 
-        conversation = f"""System: {system_prompt}
-
-User: {user_input}
-
-Respond with JSON tool call or plain text:"""
+        conversation = self._build_conversation(
+            system_prompt=system_prompt, user_input=user_input
+        )
 
         try:
-            response_text = await self.llm_provider.acomplete(
-                conversation, temperature=self.config.temperature
-            )
+            llm_chunks: list[str] = []
+            async for chunk in self.llm_provider.astream_complete(
+                conversation,
+                temperature=self.config.temperature,
+            ):
+                llm_chunks.append(chunk)
+                yield AgentEvent(kind="llm_token", content=chunk)
 
-            response_text = self._clean_response(response_text)
+            response_text = self._clean_response("".join(llm_chunks))
 
-            tool_result = self._parse_and_execute(response_text)
+            tool_calls = self._parse_tool_calls(response_text)
+            if tool_calls:
+                self._state = AgentState.ACTING
+                yield AgentEvent(kind="status", content="Executing tools")
 
-            if tool_result:
-                return AgentResponse(
+                results: list[Any] = []
+                resolved_calls: list[dict[str, Any]] = []
+                for call in tool_calls:
+                    tool_name = call["name"]
+                    arguments = call["arguments"]
+                    resolved_calls.append(call)
+
+                    yield AgentEvent(
+                        kind="tool_call",
+                        payload={"name": tool_name, "arguments": arguments},
+                    )
+
+                    tool = self.tool_registry.get(tool_name)
+                    if tool is None:
+                        error_text = f"Unknown tool: {tool_name}"
+                        results.append(error_text)
+                        yield AgentEvent(
+                            kind="tool_result",
+                            payload={
+                                "name": tool_name,
+                                "success": False,
+                                "error": error_text,
+                                "data": None,
+                            },
+                        )
+                        continue
+
+                    result = await tool.execute(**arguments)
+                    if result.success:
+                        results.append(result.data)
+                    else:
+                        results.append(f"Error: {result.error}")
+
+                    yield AgentEvent(
+                        kind="tool_result",
+                        payload={
+                            "name": tool_name,
+                            "success": result.success,
+                            "error": result.error,
+                            "data": result.data,
+                        },
+                    )
+
+                final_message = self._format_results(results)
+                self._state = AgentState.COMPLETE
+                response = AgentResponse(
                     state=AgentState.COMPLETE,
-                    message=tool_result,
+                    message=final_message,
+                    tool_calls=resolved_calls,
                     iterations=1,
                 )
+                self._append_history(
+                    user_input=user_input, assistant_output=final_message
+                )
+                yield AgentEvent(
+                    kind="final", content=final_message, payload={"response": response}
+                )
+                return
 
             self._state = AgentState.COMPLETE
-
-            return AgentResponse(
+            final_message = (
+                response_text or "I didn't understand that. Can you rephrase?"
+            )
+            response = AgentResponse(
                 state=AgentState.COMPLETE,
-                message=response_text or "I didn't understand that. Can you rephrase?",
+                message=final_message,
                 iterations=1,
+            )
+            self._append_history(user_input=user_input, assistant_output=final_message)
+            yield AgentEvent(
+                kind="final", content=final_message, payload={"response": response}
             )
 
         except Exception as e:
             logger.exception("Agent error")
             self._state = AgentState.ERROR
-            return AgentResponse(
+            message = f"I encountered an error: {e!s}"
+            response = AgentResponse(
                 state=AgentState.ERROR,
-                message=f"I encountered an error: {e!s}",
+                message=message,
                 error=str(e),
             )
+            self._append_history(user_input=user_input, assistant_output=message)
+            yield AgentEvent(
+                kind="error", content=message, payload={"response": response}
+            )
 
-    def _parse_and_execute(self, response_text: str) -> str | None:
-        """Parse JSON tool calls and execute them (sync wrapper)."""
+    def _build_conversation(self, system_prompt: str, user_input: str) -> str:
+        """Build conversation text with recent history included."""
+        lines = [f"System: {system_prompt}", ""]
+
+        for entry in self._get_recent_history():
+            role = entry.get("role", "assistant")
+            label = "User" if role == "user" else "Assistant"
+            content = str(entry.get("content", "")).strip()
+            if not content:
+                continue
+            lines.extend([f"{label}: {content}", ""])
+
+        lines.extend(
+            [
+                f"User: {user_input}",
+                "",
+                "Respond with JSON tool call or plain text:",
+            ]
+        )
+        return "\n".join(lines)
+
+    def _append_history(self, user_input: str, assistant_output: str) -> None:
+        """Append the latest turn to in-memory conversation history."""
+        self._history.extend(
+            [
+                {"role": "user", "content": user_input},
+                {"role": "assistant", "content": assistant_output},
+            ]
+        )
+
+        max_messages = max(self.config.history_turn_limit, 1) * 2
+        if len(self._history) > max_messages:
+            self._history = self._history[-max_messages:]
+
+    def _get_recent_history(self) -> list[dict[str, Any]]:
+        """Get bounded history entries included in each model call."""
+        max_messages = max(self.config.history_turn_limit, 1) * 2
+        if len(self._history) <= max_messages:
+            return self._history
+        return self._history[-max_messages:]
+
+    def _parse_tool_calls(self, response_text: str) -> list[dict[str, Any]]:
+        """Parse model output into normalized tool calls.
+
+        Args:
+            response_text: Model response that may contain tool call JSON.
+
+        Returns:
+            A normalized list of tool call dictionaries.
+        """
+        if "{" not in response_text:
+            return []
+
         try:
-            if "{" not in response_text:
-                return None
-
-            import json
-
             data = json.loads(response_text)
-
-            if "tool_calls" in data:
-                results = []
-                for call in data["tool_calls"]:
-                    tool_name = call.get("name")
-                    arguments = call.get("arguments", {})
-
-                    tool = self.tool_registry.get(tool_name)
-                    if tool:
-                        result = self._execute_tool_sync(tool, arguments)
-                        if result.success:
-                            results.append(result.data)
-                        else:
-                            results.append(f"Error: {result.error}")
-                    else:
-                        results.append(f"Unknown tool: {tool_name}")
-
-                if results:
-                    return self._format_results(results)
-                return None
-
         except json.JSONDecodeError:
-            pass
+            return []
 
-        return None
+        raw_calls = data.get("tool_calls")
+        if not isinstance(raw_calls, list):
+            return []
 
-    def _execute_tool_sync(self, tool: Tool, arguments: dict[str, Any]) -> ToolResult:
-        """Execute a tool synchronously."""
-        import asyncio
+        parsed_calls: list[dict[str, Any]] = []
+        for call in raw_calls:
+            if not isinstance(call, dict):
+                continue
 
-        try:
-            loop = asyncio.get_running_loop()
-            import concurrent.futures
+            name = call.get("name")
+            arguments = call.get("arguments", {})
+            if not isinstance(name, str):
+                continue
+            if not isinstance(arguments, dict):
+                arguments = {}
 
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, tool.execute(**arguments))
-                return future.result()
-        except RuntimeError:
-            return asyncio.run(tool.execute(**arguments))
+            parsed_calls.append({"name": name, "arguments": arguments})
 
-            import json
-
-            data = json.loads(response_text)
-
-            if "tool_calls" in data:
-                results = []
-                for call in data["tool_calls"]:
-                    tool_name = call.get("name")
-                    arguments = call.get("arguments", {})
-
-                    tool = self.tool_registry.get(tool_name)
-                    if tool:
-                        import asyncio
-
-                        result = asyncio.run(tool.execute(**arguments))
-                        if result.success:
-                            results.append(result.data)
-                        else:
-                            results.append(f"Error: {result.error}")
-                    else:
-                        results.append(f"Unknown tool: {tool_name}")
-
-                if results:
-                    return self._format_results(results)
-                return None
-
-        except json.JSONDecodeError:
-            pass
-
-        return None
+        return parsed_calls
 
     def _format_results(self, results: list[Any]) -> str:
         """Format tool results for display."""
@@ -430,9 +565,7 @@ Respond with JSON tool call or plain text:"""
         response = response.strip()
 
         response = re.sub(r"^```[\w]*\n?", "", response)
-        response = re.sub(r"\n?```$", "", response)
-
-        return response
+        return re.sub(r"\n?```$", "", response)
 
     def reset(self) -> None:
         """Reset agent state and history."""
