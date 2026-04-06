@@ -352,6 +352,83 @@ class GroqProvider:
         await self._close_client_safely()
 
 
+class LocalHFProvider:
+    """LLM provider that runs a local HuggingFace model directly.
+
+    Designed for FunctionGemma (google/functiongemma-270m-it) finetuned with LIRA.
+    Set LLM_PROVIDER=local and LOCAL_MODEL_PATH=finetune/output/lira-agent in .env.
+    """
+
+    def __init__(self, model_path: str, temperature: float = 1.0) -> None:
+        self.model_path = model_path
+        self.temperature = temperature
+        self._model: Any = None
+        self._tokenizer: Any = None
+
+    def _load(self) -> None:
+        if self._model is not None:
+            return
+
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "transformers/torch not installed. Run: uv pip install -r finetune/requirements.txt"
+            ) from exc
+
+        logger.info("Loading local model from %s", self.model_path)
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+        self._model = AutoModelForCausalLM.from_pretrained(
+            self.model_path,
+            dtype="auto",
+            device_map="auto",
+            attn_implementation="eager",
+        )
+        logger.info("Local model loaded.")
+
+    def _generate(self, prompt: str, **kwargs: Any) -> str:
+        import torch
+
+        self._load()
+
+        messages = [{"role": "user", "content": prompt}]
+        inputs = self._tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(self._model.device)
+
+        with torch.inference_mode():
+            outputs = self._model.generate(
+                **inputs,
+                max_new_tokens=512,
+                temperature=kwargs.get("temperature", self.temperature),
+                top_k=64,
+                top_p=0.95,
+                do_sample=True,
+                pad_token_id=self._tokenizer.eos_token_id,
+            )
+
+        new_tokens = outputs[0][inputs["input_ids"].shape[-1]:]
+        return self._tokenizer.decode(new_tokens, skip_special_tokens=False).strip()
+
+    async def acomplete(self, prompt: str, **kwargs: Any) -> str:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: self._generate(prompt, **kwargs))
+
+    async def astream_complete(self, prompt: str, **kwargs: Any) -> AsyncIterator[str]:
+        result = await self.acomplete(prompt, **kwargs)
+        yield result
+
+    def complete(self, prompt: str, **kwargs: Any) -> str:
+        return self._generate(prompt, **kwargs)
+
+    async def close(self) -> None:
+        pass
+
+
 def get_llm_provider() -> LLMProvider:
     """Get the configured LLM provider."""
     from lira.core.config import settings
@@ -363,6 +440,11 @@ def get_llm_provider() -> LLMProvider:
             api_key=settings.groq_api_key,
             model=settings.llm_model,
         )
+
+    if settings.llm_provider == "local":
+        if not settings.local_model_path:
+            raise ValueError("LOCAL_MODEL_PATH must be set when LLM_PROVIDER=local")
+        return LocalHFProvider(model_path=settings.local_model_path)
 
     # Default to ollama
     return OllamaProvider(

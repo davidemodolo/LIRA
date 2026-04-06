@@ -4,10 +4,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    llm_provider: Literal["ollama", "groq"] = "ollama"
+    llm_provider: Literal["ollama", "groq", "local"] = "ollama"
     llm_model: str = "gemma4:e4b"
 
     groq_api_key: str | None = None
+
+    # Path to a local HuggingFace model directory (used when llm_provider=local)
+    local_model_path: str | None = None
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_keep_alive: str = "30m"
