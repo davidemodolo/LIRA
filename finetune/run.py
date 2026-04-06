@@ -64,10 +64,10 @@ SEED = 42
 def step_extract_tools() -> list[dict[str, Any]]:
     print("\n[1/5] Extracting MCP tool schemas from LIRA server...")
     from lira.db.session import init_database
-    from lira.mcp.server import mcp
-    import lira.mcp.tools  # noqa: F401
+    from lira.mcp.server import mcp, register_components
 
     init_database()
+    register_components()
 
     schemas: list[dict[str, Any]] = []
     for tool in mcp._local_provider._components.values():

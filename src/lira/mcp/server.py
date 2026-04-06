@@ -2,18 +2,32 @@
 
 from __future__ import annotations
 
+import importlib
+
 from fastmcp import FastMCP
 
 # Create the global FastMCP server instance
 mcp = FastMCP("lira-mcp")
 
-# Import tools and prompts so their decorators register with the server
-import lira.mcp.tools  # noqa: E402, F401
-import lira.mcp.prompts  # noqa: E402, F401
+_registered = False
+
+
+def register_components() -> None:
+    """Import tool and prompt modules so their decorators register with ``mcp``.
+
+    Safe to call multiple times — only the first call performs the imports.
+    """
+    global _registered
+    if _registered:
+        return
+    importlib.import_module("lira.mcp.tools")
+    importlib.import_module("lira.mcp.prompts")
+    _registered = True
 
 
 def main() -> None:
     """Run the FastMCP server."""
+    register_components()
     mcp.run()
 
 

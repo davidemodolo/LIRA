@@ -22,7 +22,7 @@ from lira.core.config import settings
 from lira.core.init import check_initialization_needed, get_category_tree, get_currency
 from lira.core.llm import LLMProvider, get_llm_provider
 from lira.db.session import init_database
-from lira.mcp.server import mcp
+from lira.mcp.server import mcp, register_components
 
 logger = logging.getLogger(__name__)
 
@@ -384,6 +384,7 @@ class Agent:
     ) -> None:
         self.config = config or AgentConfig()
         init_database()
+        register_components()
 
         if llm_provider:
             self.llm_provider = llm_provider
