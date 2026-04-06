@@ -50,6 +50,7 @@ COMMANDS: dict[str, str] = {
     "/new": "Clear session context",
     "/help": "Show available commands",
     "/clear": "Clear message history",
+    "/copy": "Copy last L.I.R.A. response to clipboard",
 }
 
 COMMAND_ALIASES: dict[str, str] = {
@@ -62,6 +63,7 @@ COMMAND_ALIASES: dict[str, str] = {
     "/c": "/clear",
     "/q": "exit",
     "/e": "exit",
+    "/cp": "/copy",
 }
 
 
@@ -102,11 +104,13 @@ class MessageHistory(RichLog):
             auto_scroll=True,
             **kwargs,
         )
+        self._last_lira_message: str = ""
 
     def add_user_message(self, text: str) -> None:
         self.write(f"[bold cyan]You >[/bold cyan] {text}")
 
     def add_lira_message(self, text: str) -> None:
+        self._last_lira_message = text
         self.write(f"[bold green]L.I.R.A. >[/bold green] {text}")
 
     def add_trace_line(self, text: str) -> None:
@@ -227,6 +231,27 @@ class LIRAApp(App):
             history.add_system_message(
                 "[dim]Commands: /trace, /show-trace, /reset, /help, /clear[/dim]"
             )
+
+            if self.agent is not None:
+                init = self.agent.initialization_needed
+                if any(init.values()):
+                    missing = []
+                    if init.get("currency"):
+                        missing.append("your base currency (e.g. EUR, USD)")
+                    if init.get("payment_methods"):
+                        missing.append(
+                            "your payment methods with starting balances "
+                            "(e.g. 'Cash: 100, Revolut: 500, BBVA: 1200')"
+                        )
+                    if init.get("categories"):
+                        missing.append(
+                            "your expense categories — or just say 'use defaults' "
+                            "to load the built-in hierarchy"
+                        )
+                    lines = "\n  • ".join(missing)
+                    history.add_lira_message(
+                        f"Fresh database detected. To get started, tell me:\n  • {lines}"
+                    )
 
             input_widget = self.query_one("#command-input", Input)
             input_widget.focus()
@@ -350,6 +375,15 @@ class LIRAApp(App):
         if command in ("/clear",):
             history.clear()
             history.add_system_message("[dim]History cleared.[/dim]")
+            return
+
+        if command in ("/copy",):
+            text = history._last_lira_message
+            if text:
+                self.app.copy_to_clipboard(text)
+                history.add_system_message("[dim]Copied to clipboard.[/dim]")
+            else:
+                history.add_system_message("[dim]Nothing to copy yet.[/dim]")
             return
 
         self.run_agent(user_input, history)

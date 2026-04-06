@@ -41,6 +41,9 @@ MUTATION_TOOLS = {
     "create_category",
     "update_transactions",
     "create_persistent_plot",
+    "create_investment",
+    "set_asset_price",
+    "update_asset_prices",
 }
 
 
@@ -581,22 +584,6 @@ class Agent:
 Current date: {today}
 Base currency: {self._currency}
 {init_context}{category_info}
-Your capabilities:
-- list_accounts: List all accounts with their balances
-- create_account: Create a new financial account
-- create_transaction: Record income or expenses (supports primary and secondary categories)
-- get_transactions: View recent transactions
-- generate_plot: Create visualizations (bar, line, pie, scatter charts)
-- set_currency: Set user's base currency
-- create_payment_method: Add a payment method with balance
-- get_payment_method_balances: View all payment methods with balances
-- transfer_between_payment_methods: Transfer money between payment methods
-- update_payment_method_balance: Set balance directly (for corrections)
-- record_gain_loss: Record a gain or loss for a payment method
-- create_persistent_plot: Add a persistent plot to the dashboard
-- get_categories: View available categories
-- create_category: Create a new category
-
 Available tools:
 {self._tools_schema}
 
@@ -800,7 +787,6 @@ If no tools needed, respond with plain text."""
                 yield AgentEvent(kind="status", content="Executing tools")
 
                 results: list[Any] = []
-                calls_to_run = mutation_calls if not read_calls else []
                 for call in tool_calls:
                     if call in resolved_calls:
                         continue

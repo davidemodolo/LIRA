@@ -6,23 +6,30 @@
     <title>L.I.R.A.</title>
     <style>
         :root {
-            --bg: #0a0e0a;
-            --bg2: #0d120d;
-            --bg3: #111811;
-            --border: #1f2e1f;
-            --border2: #2a3f2a;
-            --green: #39d353;
-            --green2: #00c853;
-            --green-dim: #1e4d2e;
-            --amber: #f0a500;
-            --amber-dim: #3d2a00;
-            --red: #ff4c4c;
-            --red-dim: #3d1010;
-            --cyan: #00e5ff;
-            --cyan-dim: #003d4d;
-            --text: #c8dcc8;
-            --text-dim: #5a7a5a;
-            --text-muted: #3a5a3a;
+            --bg: #FFFEF2;
+            --bg2: #F5F4E8;
+            --bg3: #EDEADE;
+            --border: #000000;
+            --bw: 2px;
+            --yellow: #FFE500;
+            --yellow-dim: #FFF9C4;
+            --green: #00C97A;
+            --green2: #00A860;
+            --green-dim: #E6FFF4;
+            --amber: #FF8C00;
+            --amber-dim: #FFF3E0;
+            --red: #FF4F4F;
+            --red-dim: #FFE8E8;
+            --cyan: #0097A7;
+            --cyan-dim: #E0F7FA;
+            --purple: #7C3AED;
+            --blue: #2563EB;
+            --text: #000000;
+            --text-dim: #444444;
+            --text-muted: #888888;
+            --shadow: 4px 4px 0 #000;
+            --shadow-lg: 6px 6px 0 #000;
+            --shadow-sm: 2px 2px 0 #000;
             --mono: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -37,84 +44,112 @@
         }
 
         /* Scrollbar */
-        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: var(--bg2); }
-        ::-webkit-scrollbar-thumb { background: var(--border2); }
-        ::-webkit-scrollbar-thumb:hover { background: var(--green-dim); }
+        ::-webkit-scrollbar-thumb { background: #000; }
+        ::-webkit-scrollbar-thumb:hover { background: #333; }
 
-        /* Sidebar */
+        /* ========== Sidebar ========== */
         aside {
             width: 220px;
-            background: var(--bg2);
-            border-right: 1px solid var(--border);
+            background: var(--yellow);
+            border-right: var(--bw) solid var(--border);
             display: flex;
             flex-direction: column;
             flex-shrink: 0;
             z-index: 10;
         }
         .sidebar-header {
-            padding: 16px;
-            border-bottom: 1px solid var(--border);
+            padding: 18px 16px 14px;
+            border-bottom: var(--bw) solid var(--border);
+            background: #000;
         }
         .logo {
-            color: var(--green);
-            font-size: 18px;
-            font-weight: 700;
-            letter-spacing: 2px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            color: var(--yellow);
+            font-size: 20px;
+            font-weight: 900;
+            letter-spacing: 3px;
         }
-        .logo-bracket { color: var(--text-dim); }
-        .logo-version { color: var(--text-dim); font-size: 10px; font-weight: 400; }
-        nav { padding: 8px; flex: 1; }
+        .logo-version { color: #666; font-size: 10px; font-weight: 400; margin-top: 3px; font-family: var(--mono); }
+        nav { padding: 8px; flex: 1; overflow-y: auto; }
         .nav-btn {
             display: flex;
             align-items: center;
             gap: 8px;
             width: 100%;
-            padding: 8px 10px;
+            padding: 9px 12px;
             background: none;
-            border: none;
-            color: var(--text-dim);
+            border: var(--bw) solid transparent;
+            color: var(--text);
             cursor: pointer;
             text-align: left;
             font-family: var(--mono);
             font-size: 12px;
-            border-left: 2px solid transparent;
-            transition: all 0.15s;
+            font-weight: 700;
+            margin-bottom: 3px;
+            transition: all 0.1s;
         }
-        .nav-btn:hover { color: var(--text); background: var(--bg3); }
-        .nav-btn.active { color: var(--green); border-left-color: var(--green); background: var(--bg3); }
-        .nav-prompt { color: var(--text-dim); font-size: 11px; }
-        .nav-btn.active .nav-prompt { color: var(--green); }
+        .nav-btn:hover {
+            background: rgba(0,0,0,0.08);
+            border-color: var(--border);
+            box-shadow: var(--shadow-sm);
+        }
+        .nav-btn.active {
+            background: #000;
+            color: var(--yellow);
+            border-color: #000;
+            box-shadow: var(--shadow-sm);
+        }
+        .nav-prompt { font-size: 12px; opacity: 0.5; }
+        .nav-btn.active .nav-prompt { opacity: 1; color: var(--yellow); }
         .sidebar-footer {
-            padding: 12px 16px;
-            border-top: 1px solid var(--border);
+            padding: 14px 16px;
+            border-top: var(--bw) solid var(--border);
+            background: #000;
         }
-        .net-worth-label { color: var(--text-dim); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
-        .net-worth-value { color: var(--green); font-size: 22px; font-weight: 700; letter-spacing: -0.5px; margin-top: 2px; }
+        .net-worth-label { color: #888; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+        .net-worth-value { color: var(--yellow); font-size: 22px; font-weight: 900; letter-spacing: -0.5px; margin-top: 2px; }
+        .chat-toggle-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 9px 12px;
+            background: var(--green);
+            border: var(--bw) solid var(--border);
+            color: #000;
+            cursor: pointer;
+            text-align: left;
+            font-family: var(--mono);
+            font-size: 12px;
+            font-weight: 900;
+            margin-top: 8px;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.1s;
+        }
+        .chat-toggle-btn:hover { box-shadow: none; transform: translate(2px, 2px); }
 
-        /* Main content */
-        main { flex: 1; overflow-y: auto; padding: 24px; background: var(--bg); }
+        /* ========== Main content ========== */
+        main { flex: 1; overflow-y: auto; padding: 24px; background: var(--bg); min-width: 0; }
         section { display: none; max-width: 1200px; margin: 0 auto; }
         section.active { display: block; }
 
         /* Section header */
-        .section-header { margin-bottom: 20px; }
+        .section-header { margin-bottom: 24px; }
         .section-title {
-            color: var(--green);
-            font-size: 16px;
-            font-weight: 700;
-            letter-spacing: 1px;
+            color: #000;
+            font-size: 22px;
+            font-weight: 900;
+            letter-spacing: -0.5px;
+            text-transform: uppercase;
         }
-        .section-title::before { content: '> '; color: var(--text-dim); }
-        .section-subtitle { color: var(--text-dim); font-size: 11px; margin-top: 4px; }
+        .section-subtitle { color: var(--text-dim); font-size: 11px; margin-top: 4px; font-family: var(--mono); }
 
         /* Cards / panels */
         .panel {
-            background: var(--bg2);
-            border: 1px solid var(--border);
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
+            box-shadow: var(--shadow);
             padding: 16px;
         }
         .panel-title {
@@ -122,13 +157,14 @@
             font-size: 10px;
             letter-spacing: 1.5px;
             text-transform: uppercase;
+            font-weight: 700;
             margin-bottom: 8px;
         }
 
         /* Grid */
-        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 22px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 22px; }
         @media (max-width: 900px) {
             .grid-4 { grid-template-columns: 1fr 1fr; }
             .grid-2 { grid-template-columns: 1fr; }
@@ -139,66 +175,82 @@
         }
 
         /* Stat card */
-        .stat-card { background: var(--bg2); border: 1px solid var(--border); padding: 14px; }
-        .stat-label { color: var(--text-dim); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; }
-        .stat-value { font-size: 24px; font-weight: 700; letter-spacing: -1px; margin-top: 4px; font-family: var(--mono); }
-        .stat-green { color: var(--green); }
+        .stat-card {
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
+            box-shadow: var(--shadow);
+            padding: 16px;
+        }
+        .stat-label { color: var(--text-dim); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 700; }
+        .stat-value { font-size: 24px; font-weight: 900; letter-spacing: -1px; margin-top: 6px; font-family: var(--mono); }
+        .stat-green { color: var(--green2); }
         .stat-amber { color: var(--amber); }
         .stat-red { color: var(--red); }
-        .stat-cyan { color: var(--cyan); }
+        .stat-cyan { color: var(--blue); }
 
         /* Tables */
-        .table-wrap { background: var(--bg2); border: 1px solid var(--border); overflow-x: auto; }
+        .table-wrap {
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
+            box-shadow: var(--shadow-lg);
+            overflow-x: auto;
+            margin-bottom: 22px;
+        }
         table { width: 100%; border-collapse: collapse; }
-        thead { border-bottom: 1px solid var(--border2); }
+        thead { background: #000; }
         th {
             padding: 10px 14px;
             text-align: left;
-            color: var(--text-dim);
+            color: var(--yellow);
             font-size: 10px;
             letter-spacing: 1.5px;
             text-transform: uppercase;
-            font-weight: 600;
+            font-weight: 700;
         }
         th.right { text-align: right; }
-        td { padding: 9px 14px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 12px; }
+        td { padding: 9px 14px; border-bottom: 1px solid var(--bg3); color: var(--text); font-size: 12px; }
         td.right { text-align: right; font-variant-numeric: tabular-nums; }
         tr:last-child td { border-bottom: none; }
-        tr:hover td { background: var(--bg3); }
+        tr:hover td { background: var(--yellow-dim); }
         .td-dim { color: var(--text-dim); }
-        .td-green { color: var(--green); }
-        .td-red { color: var(--red); }
-        .td-amber { color: var(--amber); }
-        .td-cyan { color: var(--cyan); }
+        .td-green { color: var(--green2); font-weight: 700; }
+        .td-red { color: var(--red); font-weight: 700; }
+        .td-amber { color: var(--amber); font-weight: 700; }
+        .td-cyan { color: var(--blue); font-weight: 700; }
 
         /* Type badges */
         .badge {
             display: inline-block;
-            padding: 2px 7px;
+            padding: 2px 8px;
             font-size: 10px;
             letter-spacing: 1px;
             text-transform: uppercase;
-            font-weight: 600;
-            border: 1px solid;
+            font-weight: 900;
+            border: var(--bw) solid var(--border);
+            box-shadow: 1px 1px 0 #000;
         }
-        .badge-expense { color: var(--red); border-color: var(--red); background: var(--red-dim); }
-        .badge-income  { color: var(--green); border-color: var(--green); background: var(--green-dim); }
-        .badge-transfer { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
-        .badge-default { color: var(--amber); border-color: var(--amber); background: var(--amber-dim); }
+        .badge-expense { color: #fff; border-color: var(--red); background: var(--red); }
+        .badge-income  { color: #fff; border-color: var(--green2); background: var(--green2); }
+        .badge-transfer { color: #fff; border-color: var(--blue); background: var(--blue); }
+        .badge-default { color: #000; border-color: var(--amber); background: var(--amber); }
 
         /* Plot containers */
         .plot-box {
-            background: var(--bg2);
-            border: 1px solid var(--border);
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
+            box-shadow: var(--shadow);
             padding: 16px;
-            margin-bottom: 20px;
+            margin-bottom: 22px;
         }
         .plot-box h3 {
-            color: var(--text-dim);
-            font-size: 10px;
+            color: var(--text);
+            font-size: 11px;
             letter-spacing: 1.5px;
             text-transform: uppercase;
-            margin-bottom: 12px;
+            font-weight: 900;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: var(--bw) solid var(--border);
         }
         .plot-inner {
             min-height: 200px;
@@ -212,45 +264,41 @@
 
         /* Payment method cards */
         .pm-card {
-            background: var(--bg2);
-            border: 1px solid var(--border);
-            padding: 14px;
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
+            box-shadow: var(--shadow);
+            padding: 16px;
         }
-        .pm-name { color: var(--text-dim); font-size: 11px; letter-spacing: 0.5px; margin-bottom: 4px; display: flex; justify-content: space-between; }
-        .pm-balance { color: var(--green); font-size: 20px; font-weight: 700; }
+        .pm-name { color: var(--text-dim); font-size: 11px; letter-spacing: 0.5px; margin-bottom: 6px; display: flex; justify-content: space-between; font-weight: 700; }
+        .pm-balance { color: var(--green2); font-size: 22px; font-weight: 900; }
 
-        /* ========== Chat Widget ========== */
-        #chat-fab {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: var(--green);
-            color: var(--bg);
-            border: none;
-            padding: 12px 16px;
-            cursor: pointer;
+        /* Form controls */
+        select, input[type="date"], input[type="text"] {
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
+            color: var(--text);
+            padding: 6px 10px;
             font-family: var(--mono);
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 700;
-            letter-spacing: 1px;
-            z-index: 100;
+            outline: none;
+            box-shadow: var(--shadow-sm);
         }
-        #chat-fab:hover { background: var(--green2); }
+        select:focus, input:focus {
+            box-shadow: none;
+            transform: translate(2px, 2px);
+        }
 
+        /* ========== Chat Panel (flex sibling, not overlay) ========== */
         #chat-window {
-            position: fixed;
-            right: 0;
-            top: 0;
-            bottom: 0;
-            width: 600px;
-            min-width: 300px;
-            max-width: calc(100vw - 240px);
+            width: 400px;
+            min-width: 280px;
             background: var(--bg2);
-            border-left: 1px solid var(--border);
+            border-left: var(--bw) solid var(--border);
             display: none;
             flex-direction: column;
-            z-index: 200;
-            user-select: none;
+            flex-shrink: 0;
+            position: relative;
         }
         #chat-window.open { display: flex; }
 
@@ -263,49 +311,50 @@
             width: 5px;
             cursor: col-resize;
             z-index: 10;
-            transition: background 0.15s;
+            transition: background 0.1s;
         }
         #chat-resize-handle:hover,
-        #chat-resize-handle.dragging { background: var(--green-dim); }
+        #chat-resize-handle.dragging { background: rgba(0,0,0,0.15); }
 
         .chat-header {
-            background: var(--bg);
-            border-bottom: 1px solid var(--border);
+            background: #000;
+            border-bottom: var(--bw) solid var(--border);
             padding: 10px 14px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-shrink: 0;
         }
-        .chat-title { color: var(--green); font-size: 13px; font-weight: 700; letter-spacing: 1px; }
-        .chat-status { display: flex; align-items: center; gap: 6px; }
-        .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+        .chat-title { color: var(--yellow); font-size: 14px; font-weight: 900; letter-spacing: 2px; }
+        .chat-status { display: flex; align-items: center; gap: 8px; }
+        .status-dot { width: 8px; height: 8px; background: var(--green); flex-shrink: 0; border: 1px solid var(--green2); }
         .chat-actions { display: flex; gap: 4px; align-items: center; }
         .chat-btn {
-            background: none;
-            border: 1px solid var(--border2);
-            color: var(--text-dim);
-            padding: 4px 8px;
+            background: #000;
+            border: 1px solid #444;
+            color: #888;
+            padding: 4px 10px;
             cursor: pointer;
             font-family: var(--mono);
             font-size: 11px;
+            font-weight: 700;
         }
-        .chat-btn:hover { color: var(--green); border-color: var(--green); }
+        .chat-btn:hover { color: var(--yellow); border-color: var(--yellow); }
 
-        /* Status bar — shown while the server is busy */
+        /* Status bar */
         #chat-status-bar {
             display: none;
-            background: var(--bg);
-            border-bottom: 1px solid var(--border);
+            background: #000;
+            border-bottom: var(--bw) solid var(--border);
             padding: 5px 14px;
             font-size: 11px;
-            color: var(--amber);
+            color: var(--yellow);
             align-items: center;
             gap: 8px;
             flex-shrink: 0;
         }
         #chat-status-bar.visible { display: flex; }
-        .spinner-char { font-size: 13px; animation: none; display: inline-block; width: 14px; }
+        .spinner-char { font-size: 13px; display: inline-block; width: 14px; }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -318,7 +367,7 @@
         #chat-messages {
             flex: 1;
             overflow-y: auto;
-            padding: 12px;
+            padding: 14px;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -327,57 +376,58 @@
 
         .msg-user {
             align-self: flex-end;
-            background: var(--green-dim);
-            border: 1px solid var(--green);
-            color: var(--green);
+            background: #000;
+            border: var(--bw) solid var(--border);
+            color: var(--yellow);
             padding: 8px 12px;
             max-width: 85%;
             font-size: 12px;
             line-height: 1.5;
+            font-weight: 700;
+            box-shadow: var(--shadow-sm);
         }
-        .msg-user::before { content: '> '; color: var(--text-dim); }
 
         .msg-assistant {
             align-self: flex-start;
-            background: var(--bg3);
-            border: 1px solid var(--border2);
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
             color: var(--text);
-            padding: 8px 12px;
-            max-width: 85%;
+            padding: 10px 14px;
+            max-width: 90%;
             font-size: 12px;
             line-height: 1.6;
+            box-shadow: var(--shadow-sm);
         }
-        .msg-assistant::before { content: '# '; color: var(--text-dim); }
 
         .msg-system {
             align-self: center;
             color: var(--text-dim);
             font-size: 10px;
             letter-spacing: 0.5px;
-            border: 1px solid var(--border);
+            border: 1px solid var(--text-muted);
             padding: 3px 10px;
+            font-weight: 700;
         }
 
         .typing-dots span {
             display: inline-block;
-            width: 5px; height: 5px;
-            background: var(--green);
-            border-radius: 50%;
+            width: 6px; height: 6px;
+            background: #000;
             margin: 0 2px;
             animation: dot-blink 1.2s infinite both;
         }
         .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
         .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
         @keyframes dot-blink {
-            0%, 80%, 100% { opacity: 0.2; }
+            0%, 80%, 100% { opacity: 0.15; }
             40% { opacity: 1; }
         }
 
         /* Trace panel */
         #trace-panel {
-            width: 260px;
-            border-left: 1px solid var(--border);
-            background: var(--bg);
+            width: 240px;
+            border-left: var(--bw) solid var(--border);
+            background: #000;
             display: none;
             flex-direction: column;
             flex-shrink: 0;
@@ -385,35 +435,36 @@
         #trace-panel.open { display: flex; }
         .trace-header {
             padding: 8px 10px;
-            border-bottom: 1px solid var(--border);
-            color: var(--text-dim);
+            border-bottom: 1px solid #333;
+            color: var(--yellow);
             font-size: 10px;
             letter-spacing: 1.5px;
             text-transform: uppercase;
+            font-weight: 700;
         }
         #trace-content {
             flex: 1;
             overflow-y: auto;
             padding: 8px;
             font-size: 10px;
-            line-height: 1.6;
+            line-height: 1.7;
         }
         .trace-status { color: var(--amber); }
-        .trace-call { color: var(--cyan); }
+        .trace-call { color: #58a6ff; }
         .trace-ok { color: var(--green); }
         .trace-err { color: var(--red); }
 
         /* Chat input */
         .chat-input-area {
             flex-shrink: 0;
-            border-top: 1px solid var(--border);
-            padding: 8px;
+            border-top: var(--bw) solid var(--border);
+            padding: 10px;
             background: var(--bg);
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
         }
-        .input-prompt { color: var(--green); font-size: 13px; font-weight: 700; flex-shrink: 0; }
+        .input-prompt { color: var(--green2); font-size: 14px; font-weight: 900; flex-shrink: 0; }
         #chat-input {
             flex: 1;
             background: none;
@@ -422,24 +473,30 @@
             color: var(--text);
             font-family: var(--mono);
             font-size: 12px;
-            caret-color: var(--green);
+            font-weight: 700;
+            caret-color: var(--green2);
         }
-        #chat-input::placeholder { color: var(--text-muted); }
+        #chat-input::placeholder { color: var(--text-muted); font-weight: 400; }
         .send-btn {
-            background: var(--green-dim);
-            border: 1px solid var(--green);
-            color: var(--green);
-            padding: 4px 10px;
+            background: #000;
+            border: var(--bw) solid var(--border);
+            color: var(--yellow);
+            padding: 6px 14px;
             cursor: pointer;
             font-family: var(--mono);
             font-size: 11px;
+            font-weight: 900;
+            letter-spacing: 1px;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.1s;
         }
-        .send-btn:hover { background: var(--green); color: var(--bg); }
+        .send-btn:hover { box-shadow: none; transform: translate(2px, 2px); }
 
         /* ===== HITL Diff Card ===== */
         .diff-card {
             background: var(--bg);
-            border: 1px solid var(--amber);
+            border: var(--bw) solid var(--amber);
+            box-shadow: 3px 3px 0 var(--amber);
             padding: 12px;
             margin: 4px 0;
             max-width: 100%;
@@ -447,101 +504,126 @@
         .diff-card-header {
             color: var(--amber);
             font-size: 11px;
-            font-weight: 700;
+            font-weight: 900;
             letter-spacing: 1px;
             text-transform: uppercase;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             gap: 6px;
         }
         .diff-card-header::before { content: '[!] '; }
         .diff-item {
-            border: 1px solid var(--border2);
+            border: 1px solid #ccc;
             margin-bottom: 8px;
             padding: 8px;
+            background: var(--bg2);
         }
-        .diff-item-title { color: var(--cyan); font-size: 11px; margin-bottom: 6px; }
+        .diff-item-title { color: var(--blue); font-size: 11px; margin-bottom: 6px; font-weight: 700; }
         .diff-row { display: flex; gap: 8px; margin-bottom: 4px; }
-        .diff-label { color: var(--text-dim); font-size: 10px; width: 50px; flex-shrink: 0; text-transform: uppercase; }
+        .diff-label { color: var(--text-dim); font-size: 10px; width: 50px; flex-shrink: 0; text-transform: uppercase; font-weight: 700; }
         .diff-before { color: var(--red); font-size: 11px; flex: 1; word-break: break-all; }
-        .diff-after  { color: var(--green); font-size: 11px; flex: 1; word-break: break-all; }
-        .diff-actions { display: flex; gap: 8px; margin-top: 8px; }
+        .diff-after  { color: var(--green2); font-size: 11px; flex: 1; word-break: break-all; }
+        .diff-actions { display: flex; gap: 8px; margin-top: 10px; }
         .btn-confirm {
-            background: var(--green-dim);
-            border: 1px solid var(--green);
-            color: var(--green);
-            padding: 5px 14px;
+            background: var(--green2);
+            border: var(--bw) solid var(--border);
+            color: #fff;
+            padding: 6px 16px;
             cursor: pointer;
             font-family: var(--mono);
             font-size: 11px;
-            font-weight: 700;
+            font-weight: 900;
             letter-spacing: 1px;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.1s;
         }
-        .btn-confirm:hover { background: var(--green); color: var(--bg); }
+        .btn-confirm:hover { box-shadow: none; transform: translate(2px, 2px); }
         .btn-cancel {
-            background: var(--red-dim);
-            border: 1px solid var(--red);
-            color: var(--red);
-            padding: 5px 14px;
+            background: var(--red);
+            border: var(--bw) solid var(--border);
+            color: #fff;
+            padding: 6px 16px;
             cursor: pointer;
             font-family: var(--mono);
             font-size: 11px;
+            font-weight: 900;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.1s;
         }
-        .btn-cancel:hover { background: var(--red); color: #fff; }
+        .btn-cancel:hover { box-shadow: none; transform: translate(2px, 2px); }
 
         /* Markdown in chat */
-        .msg-assistant strong { color: var(--green); }
+        .msg-assistant strong { color: var(--green2); font-weight: 900; }
         .msg-assistant code {
-            background: var(--bg);
-            border: 1px solid var(--border2);
-            padding: 1px 4px;
-            color: var(--cyan);
+            background: var(--bg3);
+            border: 1px solid #ccc;
+            padding: 1px 5px;
+            color: var(--blue);
             font-family: var(--mono);
         }
         .msg-assistant pre {
-            background: var(--bg);
-            border: 1px solid var(--border2);
-            padding: 8px;
+            background: #000;
+            border: var(--bw) solid var(--border);
+            padding: 10px;
             overflow-x: auto;
-            margin: 4px 0;
+            margin: 6px 0;
             font-size: 11px;
         }
         .msg-assistant ul { margin-left: 16px; }
         .msg-assistant li { color: var(--text); font-size: 12px; }
-        .msg-assistant h1, .msg-assistant h2, .msg-assistant h3 { color: var(--green); margin: 4px 0; }
-        .msg-assistant a { color: var(--cyan); }
+        .msg-assistant h1, .msg-assistant h2, .msg-assistant h3 { color: var(--green2); margin: 6px 0; font-weight: 900; }
+        .msg-assistant a { color: var(--blue); }
 
-        /* Audit log section */
+        /* Audit log */
         .audit-btn {
-            background: none;
-            border: 1px solid var(--border2);
-            color: var(--text-dim);
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
+            color: var(--text);
             padding: 4px 10px;
             cursor: pointer;
             font-family: var(--mono);
             font-size: 11px;
+            font-weight: 700;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.1s;
         }
-        .audit-btn:hover { color: var(--amber); border-color: var(--amber); }
+        .audit-btn:hover { box-shadow: none; transform: translate(2px, 2px); }
         .undo-btn {
-            background: none;
-            border: 1px solid var(--border2);
-            color: var(--text-dim);
-            padding: 2px 6px;
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
+            color: var(--text);
+            padding: 2px 8px;
             cursor: pointer;
             font-family: var(--mono);
             font-size: 10px;
+            font-weight: 700;
+            box-shadow: 1px 1px 0 #000;
+            transition: all 0.1s;
         }
-        .undo-btn:hover { color: var(--amber); border-color: var(--amber); }
+        .undo-btn:hover { background: var(--amber); box-shadow: none; transform: translate(1px, 1px); }
+
+        /* Section action buttons */
+        .section-btn {
+            background: var(--bg);
+            border: var(--bw) solid var(--border);
+            color: var(--text);
+            padding: 6px 14px;
+            font-family: var(--mono);
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.1s;
+        }
+        .section-btn:hover { box-shadow: none; transform: translate(2px, 2px); }
     </style>
 </head>
 <body>
     <!-- Sidebar -->
     <aside>
         <div class="sidebar-header">
-            <div class="logo">
-                <span class="logo-bracket">[</span>L.I.R.A<span class="logo-bracket">]</span>
-            </div>
+            <div class="logo">L.I.R.A.</div>
             <div class="logo-version">LIRA Is Recursive Accounting</div>
         </div>
         <nav>
@@ -560,6 +642,9 @@
             <button class="nav-btn" id="nav-audit" onclick="showSection('audit')">
                 <span class="nav-prompt">$</span> audit-log
             </button>
+            <button class="chat-toggle-btn" id="chat-fab" onclick="toggleChat()">
+                <span>⚡</span> chat with L.I.R.A.
+            </button>
         </nav>
         <div class="sidebar-footer">
             <div class="net-worth-label">Net Worth</div>
@@ -573,7 +658,7 @@
         <!-- Dashboard Section -->
         <section id="dashboard-section" class="active">
             <div class="section-header">
-                <div class="section-title">overview</div>
+                <div class="section-title">Overview</div>
                 <div class="section-subtitle">financial summary // <span id="current-date"></span></div>
             </div>
 
@@ -619,7 +704,7 @@
                         no persistent plots &mdash; ask L.I.R.A. to add one
                     </div>
                 </div>
-                <div class="plot-box" style="border-top: 2px solid var(--cyan);">
+                <div class="plot-box" style="border-top: 4px solid var(--blue);">
                     <h3>session plots <span style="color:var(--text-muted); font-size:9px;">// temporary</span></h3>
                     <div id="session-plots-container" class="plot-inner" style="min-height:80px; color: var(--text-muted);" id="session-plots-empty">
                         plots from this session will appear here
@@ -632,18 +717,18 @@
         <section id="transactions-section">
             <div class="section-header" style="display:flex; justify-content:space-between; align-items:flex-end;">
                 <div>
-                    <div class="section-title">transactions</div>
+                    <div class="section-title">Transactions</div>
                     <div class="section-subtitle">full ledger history</div>
                 </div>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <select id="filter-type" onchange="loadTransactions()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <select id="filter-type" onchange="loadTransactions()">
                         <option value="">all types</option>
                         <option value="income">income</option>
                         <option value="expense">expense</option>
                         <option value="transfer">transfer</option>
                     </select>
-                    <input type="date" id="filter-start" onchange="loadTransactions()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
-                    <input type="date" id="filter-end" onchange="loadTransactions()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
+                    <input type="date" id="filter-start" onchange="loadTransactions()">
+                    <input type="date" id="filter-end" onchange="loadTransactions()">
                 </div>
             </div>
             <div class="table-wrap">
@@ -669,7 +754,7 @@
         <!-- Payment Methods Section -->
         <section id="accounts-section">
             <div class="section-header">
-                <div class="section-title">payment-methods</div>
+                <div class="section-title">Payment Methods</div>
                 <div class="section-subtitle">balances across all payment instruments</div>
             </div>
             <div class="grid-3" id="accounts-grid">
@@ -682,10 +767,10 @@
             <!-- Portfolio summary -->
             <div class="section-header" style="display:flex; justify-content:space-between; align-items:flex-end;">
                 <div>
-                    <div class="section-title">portfolio</div>
+                    <div class="section-title">Portfolio</div>
                     <div class="section-subtitle">current positions &amp; unrealized P&amp;L</div>
                 </div>
-                <button id="update-prices-btn" onclick="updatePrices()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 12px; font-family:var(--mono); font-size:11px; cursor:pointer;">[update prices]</button>
+                <button id="update-prices-btn" class="section-btn" onclick="updatePrices()">[update prices]</button>
             </div>
             <div class="table-wrap" style="margin-bottom:24px;">
                 <table>
@@ -711,18 +796,18 @@
             <!-- Trade history -->
             <div class="section-header" style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:8px;">
                 <div>
-                    <div class="section-title" style="font-size:13px;">trade history</div>
+                    <div class="section-title" style="font-size:16px;">Trade History</div>
                     <div class="section-subtitle">buy &amp; sell records</div>
                 </div>
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <input type="text" id="filter-inv-ticker" placeholder="ticker..." onchange="loadInvestments()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px; width:90px;">
-                    <select id="filter-inv-type" onchange="loadInvestments()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <input type="text" id="filter-inv-ticker" placeholder="ticker..." onchange="loadInvestments()" style="width:90px;">
+                    <select id="filter-inv-type" onchange="loadInvestments()">
                         <option value="">all trades</option>
                         <option value="buy">buy</option>
                         <option value="sell">sell</option>
                     </select>
-                    <input type="date" id="filter-inv-start" onchange="loadInvestments()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
-                    <input type="date" id="filter-inv-end" onchange="loadInvestments()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
+                    <input type="date" id="filter-inv-start" onchange="loadInvestments()">
+                    <input type="date" id="filter-inv-end" onchange="loadInvestments()">
                 </div>
             </div>
             <div class="table-wrap">
@@ -750,7 +835,7 @@
         <!-- Audit Log Section -->
         <section id="audit-section">
             <div class="section-header">
-                <div class="section-title">audit-log</div>
+                <div class="section-title">Audit Log</div>
                 <div class="section-subtitle">history of all data mutations &mdash; click undo to revert</div>
             </div>
             <div class="table-wrap">
@@ -774,10 +859,7 @@
 
     </main>
 
-    <!-- Chat FAB -->
-    <button id="chat-fab" onclick="toggleChat()">[L.I.R.A.]</button>
-
-    <!-- Chat Window -->
+    <!-- Chat Panel (flex sibling — opens to the right of main, shrinking it) -->
     <div id="chat-window">
         <div id="chat-resize-handle"></div>
         <div class="chat-header">
@@ -805,7 +887,7 @@
         </div>
         <div class="chat-input-area">
             <span class="input-prompt">&gt;</span>
-            <input type="text" id="chat-input" placeholder="ask lira... (/help for commands)" onkeydown="handleKeydown(event)">
+            <input type="text" id="chat-input" placeholder="ask lira... (/help for commands)" onkeydown="handleKeydown(event)" style="box-shadow:none; transform:none;">
             <button class="send-btn" onclick="sendChat()">[send]</button>
         </div>
     </div>
@@ -881,7 +963,7 @@
         document.addEventListener('mousemove', (e) => {
             if (!dragging) return;
             const delta = startX - e.clientX; // moving left = wider
-            const newW = Math.max(300, Math.min(window.innerWidth - 240, startW + delta));
+            const newW = Math.max(280, Math.min(window.innerWidth - 240, startW + delta));
             win.style.width = newW + 'px';
         });
 
@@ -1074,7 +1156,7 @@
             for (const plot of plots) {
                 const div = document.createElement('div');
                 div.style.marginBottom = '12px';
-                div.innerHTML = `<div style="color:var(--text-dim);font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">${escapeHtml(plot.title)}</div><div id="pp-${plot.id}" style="min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);">loading...</div>`;
+                div.innerHTML = `<div style="color:var(--text-dim);font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;font-weight:700;">${escapeHtml(plot.title)}</div><div id="pp-${plot.id}" style="min-height:120px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);">loading...</div>`;
                 container.appendChild(div);
                 const data = await fetchPlotDataByTitle(plot.title);
                 if (data && data.length > 0) renderPlot(`pp-${plot.id}`, plot.plot_type, plot.title, data, plot.x_key, plot.y_key);
@@ -1164,22 +1246,22 @@
                 const pnlClass = pos.unrealized_pnl === null ? '' : pos.unrealized_pnl >= 0 ? 'td-green' : 'td-red';
                 const pnlPct = pos.unrealized_pnl_pct !== null ? (pos.unrealized_pnl_pct >= 0 ? '+' : '') + pos.unrealized_pnl_pct.toFixed(2) + '%' : '-';
                 return `<tr>
-                    <td class="td-green" style="font-weight:700;">${escapeHtml(pos.ticker)}</td>
+                    <td class="td-green" style="font-weight:900;">${escapeHtml(pos.ticker)}</td>
                     <td class="right td-dim">${parseFloat(pos.net_units).toFixed(6).replace(/\.?0+$/, '')}</td>
                     <td class="right td-dim">${pos.avg_cost_per_unit !== null ? formatCurrency(pos.avg_cost_per_unit) : '-'}</td>
                     <td class="right td-dim">${formatCurrency(pos.cost_basis)}</td>
                     <td class="right td-amber">${pos.current_price !== null ? formatCurrency(pos.current_price) : '<span style="color:var(--text-muted)">n/a</span>'}</td>
-                    <td class="right" style="font-weight:700;">${formatCurrency(pos.market_value)}</td>
+                    <td class="right" style="font-weight:900;">${formatCurrency(pos.market_value)}</td>
                     <td class="right ${pnlClass}">${pos.unrealized_pnl !== null ? formatCurrency(pos.unrealized_pnl) : '-'}</td>
-                    <td class="right ${pnlClass}" style="font-weight:700;">${pnlPct}</td>
+                    <td class="right ${pnlClass}" style="font-weight:900;">${pnlPct}</td>
                     <td class="td-dim" style="font-size:10px;">${pos.last_price_update ? pos.last_price_update.split('T')[0] : '-'}</td>
                 </tr>`;
             }).join('');
             // Summary row
             const s = data.summary;
             const totPnlClass = s.total_unrealized_pnl >= 0 ? 'td-green' : 'td-red';
-            tbody.innerHTML += `<tr style="border-top:1px solid var(--border2); font-weight:700;">
-                <td colspan="5" style="text-align:right; color:var(--text-muted); font-size:11px; padding-top:8px;">TOTAL</td>
+            tbody.innerHTML += `<tr style="border-top:2px solid #000; font-weight:900; background:var(--bg3);">
+                <td colspan="5" style="text-align:right; color:var(--text-dim); font-size:11px; padding-top:8px;">TOTAL</td>
                 <td class="right" style="padding-top:8px;">${formatCurrency(s.total_market_value)}</td>
                 <td class="right ${totPnlClass}" style="padding-top:8px;">${formatCurrency(s.total_unrealized_pnl)}</td>
                 <td class="right ${totPnlClass}" style="padding-top:8px;">${(s.total_unrealized_pnl_pct >= 0 ? '+' : '') + s.total_unrealized_pnl_pct.toFixed(2)}%</td>
@@ -1235,11 +1317,11 @@
                 return `<tr>
                     <td class="td-dim">${inv.date.split('T')[0]}</td>
                     <td><span class="badge ${typeClass}">${inv.trade_type}</span></td>
-                    <td class="td-green" style="font-weight:700;">${escapeHtml(inv.ticker)}</td>
+                    <td class="td-green" style="font-weight:900;">${escapeHtml(inv.ticker)}</td>
                     <td class="right">${parseFloat(inv.units).toFixed(6).replace(/\.?0+$/, '')}</td>
                     <td class="right td-dim">${formatCurrency(inv.price_per_unit)}</td>
                     <td class="right td-dim">${inv.fees > 0 ? formatCurrency(inv.fees) : '-'}</td>
-                    <td class="right td-amber" style="font-weight:700;">${formatCurrency(inv.total_amount)}</td>
+                    <td class="right td-amber" style="font-weight:900;">${formatCurrency(inv.total_amount)}</td>
                     <td class="td-dim">${escapeHtml(inv.payment_method_name || '-')}</td>
                     <td class="td-dim">${escapeHtml(inv.broker || '-')}</td>
                 </tr>`;
@@ -1295,10 +1377,10 @@
         const fab = document.getElementById('chat-fab');
         if (win.classList.contains('open')) {
             win.classList.remove('open');
-            fab.style.display = 'block';
+            fab.style.background = 'var(--green)';
         } else {
             win.classList.add('open');
-            fab.style.display = 'none';
+            fab.style.background = '#000';
             if (chatHistory.length === 0) loadChatInit();
             setTimeout(() => document.getElementById('chat-input').focus(), 50);
         }
@@ -1310,8 +1392,8 @@
         const btn = document.getElementById('trace-toggle-btn');
         if (showTrace) {
             panel.classList.add('open');
-            btn.style.color = 'var(--green)';
-            btn.style.borderColor = 'var(--green)';
+            btn.style.color = 'var(--yellow)';
+            btn.style.borderColor = 'var(--yellow)';
         } else {
             panel.classList.remove('open');
             btn.style.color = '';
@@ -1333,11 +1415,21 @@
     async function loadChatInit() {
         try {
             const summary = await fetch('/api/dashboard/summary').then(r => r.json());
-            addMsg('assistant',
-                `L.I.R.A. online. Net worth: **${formatCurrency(summary.net_worth)}**\n\n` +
-                `Commands: add transactions, view balances, generate plots, transfer funds.\n` +
-                `Type /help for slash commands.`
-            );
+            const isEmptyDb = summary.total_payment_methods === 0 && summary.total_categories === 0;
+            if (isEmptyDb) {
+                addMsg('assistant',
+                    `Fresh database detected. To get started, tell me:\n\n` +
+                    `- Your **base currency** (e.g. EUR, USD)\n` +
+                    `- Your **payment methods** with starting balances (e.g. "Cash: 100, Revolut: 500, BBVA: 1200")\n` +
+                    `- Your **expense categories** — or just say "use defaults" to load the built-in hierarchy`
+                );
+            } else {
+                addMsg('assistant',
+                    `L.I.R.A. online. Net worth: **${formatCurrency(summary.net_worth)}**\n\n` +
+                    `Commands: add transactions, view balances, generate plots, transfer funds.\n` +
+                    `Type /help for slash commands.`
+                );
+            }
         } catch (e) {
             addMsg('assistant', 'L.I.R.A. online. Ask me anything about your finances.');
         }
@@ -1431,7 +1523,7 @@
 
             // Finalize message
             if (fullContent) {
-                msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(fullContent);
+                msgEl.innerHTML = formatMarkdown(fullContent);
                 chatHistory.push({role: 'assistant', content: fullContent});
             }
 
@@ -1464,7 +1556,7 @@
             // Live update the message element (as text for now)
             const current = msgEl._raw || '';
             msgEl._raw = current + ev.content;
-            msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(msgEl._raw);
+            msgEl.innerHTML = formatMarkdown(msgEl._raw);
             document.getElementById('chat-messages').scrollTop = 99999;
         } else if (ev.kind === 'status') {
             updateSpinnerMsg(ev.content || 'processing...');
@@ -1487,10 +1579,13 @@
         } else if (ev.kind === 'mutation_preview') {
             traceEvents.push(ev);
         } else if (ev.kind === 'final' && ev.content) {
-            onToken(ev.content);
-            msgEl._raw = (msgEl._raw || '') + ev.content;
-            msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(msgEl._raw);
-            document.getElementById('chat-messages').scrollTop = 99999;
+            // Only use final content if no llm_token events were received (non-streaming fallback)
+            if (!msgEl._raw) {
+                onToken(ev.content);
+                msgEl._raw = ev.content;
+                msgEl.innerHTML = formatMarkdown(msgEl._raw);
+                document.getElementById('chat-messages').scrollTop = 99999;
+            }
         }
     }
 
@@ -1515,7 +1610,7 @@
             el.textContent = content;
         } else {
             el.className = 'msg-assistant';
-            el.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(content);
+            el.innerHTML = formatMarkdown(content);
         }
         container.appendChild(el);
         container.scrollTop = 99999;
@@ -1622,11 +1717,10 @@
             }
 
             if (fullContent) {
-                msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span>' + formatMarkdown(fullContent);
+                msgEl.innerHTML = formatMarkdown(fullContent);
                 chatHistory.push({role: 'assistant', content: fullContent});
             } else if (!msgEl._raw) {
-                // No text content streamed — show a generic success note
-                msgEl.innerHTML = '<span style="color:var(--text-dim)"># </span><span style="color:var(--green);">changes applied.</span>';
+                msgEl.innerHTML = '<span style="color:var(--green2);font-weight:900;">changes applied.</span>';
             }
 
             pendingMutations = null;
@@ -1655,7 +1749,7 @@
         const container = document.getElementById('trace-content');
         if (!container) return;
         if (!traceEvents.length) {
-            container.innerHTML = '<span style="color:var(--text-muted)">// no trace events</span>';
+            container.innerHTML = '<span style="color:#555">// no trace events</span>';
             return;
         }
         let html = '';
@@ -1693,7 +1787,7 @@
         for (const plot of sessionPlots) {
             const div = document.createElement('div');
             div.style.marginBottom = '12px';
-            div.innerHTML = `<div style="color:var(--text-dim);font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">${escapeHtml(plot.title)}</div>
+            div.innerHTML = `<div style="color:var(--text-dim);font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;font-weight:700;">${escapeHtml(plot.title)}</div>
                 <img src="data:image/png;base64,${plot.image_base64}" style="max-width:100%;max-height:200px;object-fit:contain;">`;
             container.appendChild(div);
         }
@@ -1706,13 +1800,13 @@
         if (!text) return '';
         let h = escapeHtml(text);
 
-        h = h.replace(/^### (.+)$/gm, '<h3 style="color:var(--green);margin:4px 0;">$1</h3>');
-        h = h.replace(/^## (.+)$/gm,  '<h2 style="color:var(--green);margin:4px 0;">$1</h2>');
-        h = h.replace(/^# (.+)$/gm,   '<h1 style="color:var(--green);margin:4px 0;">$1</h1>');
-        h = h.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--green);">$1</strong>');
+        h = h.replace(/^### (.+)$/gm, '<h3 style="color:var(--green2);margin:6px 0;font-weight:900;">$1</h3>');
+        h = h.replace(/^## (.+)$/gm,  '<h2 style="color:var(--green2);margin:6px 0;font-weight:900;">$1</h2>');
+        h = h.replace(/^# (.+)$/gm,   '<h1 style="color:var(--green2);margin:6px 0;font-weight:900;">$1</h1>');
+        h = h.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--green2);font-weight:900;">$1</strong>');
         h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
-        h = h.replace(/`([^`]+)`/g, '<code style="background:var(--bg);border:1px solid var(--border2);padding:1px 4px;color:var(--cyan);font-family:var(--mono);">$1</code>');
-        h = h.replace(/```[\w]*\n([\s\S]*?)```/g, '<pre style="background:var(--bg);border:1px solid var(--border2);padding:8px;overflow-x:auto;margin:4px 0;font-size:11px;"><code style="color:var(--text);">$1</code></pre>');
+        h = h.replace(/`([^`]+)`/g, '<code style="background:var(--bg3);border:1px solid #ccc;padding:1px 5px;color:var(--blue);font-family:var(--mono);">$1</code>');
+        h = h.replace(/```[\w]*\n([\s\S]*?)```/g, '<pre style="background:#000;border:2px solid #000;padding:10px;overflow-x:auto;margin:6px 0;font-size:11px;"><code style="color:#FFE500;">$1</code></pre>');
         h = h.replace(/^[-*] (.+)$/gm, '<li style="margin-left:14px;color:var(--text);">$1</li>');
         h = h.replace(/\n\n/g, '<br><br>');
         h = h.replace(/\n/g, '<br>');

@@ -17,9 +17,13 @@ class Settings(BaseSettings):
     agent_temperature: float = 0.7
     agent_max_context_tokens: int = 8192
 
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
+    api_reload: bool = False
+
     # Remote API URL — when set, the CLI forwards messages to the running
     # L.I.R.A. server instead of running a local agent.
-    # Set via env var LIRA_API_URL, e.g. "http://homeserver:8000"
+    # Set via env var LIRA_API_URL, e.g. "http://homeserver:8001"
     api_url: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

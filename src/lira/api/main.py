@@ -206,6 +206,18 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
         await agent.llm_provider.close()
 
 
+def main() -> None:
+    """Entry point for the ``lira-api`` CLI command."""
+    import uvicorn
+
+    from lira.core.config import settings
+
+    host = getattr(settings, "api_host", "0.0.0.0")
+    port = getattr(settings, "api_port", 8001)
+    reload = getattr(settings, "api_reload", False)
+    uvicorn.run("lira.api.main:app", host=host, port=port, reload=reload)
+
+
 @app.post("/api/chat/confirm", tags=["agent"])
 async def confirm_mutations(request: ConfirmRequest) -> Any:
     """Execute previously previewed and confirmed mutation tool calls.

@@ -1,47 +1,36 @@
-# L.I.R.A. Docker Compose Configuration
-# For local development with Ollama (local LLM)
+# L.I.R.A. Docker Compose
+# Self-hosted deployment with local (Ollama) or cloud (Groq) LLM
 
 services:
-  # Main L.I.R.A. API Server
   api:
     build:
       context: .
-      target: development
+      target: runtime
     ports:
       - "8001:8001"
     volumes:
-      - ./src:/app/src
       - ./data:/app/data
       - ./logs:/app/logs
     environment:
-      - APP_ENV=development
+      - APP_ENV=production
       - DATABASE_URL=sqlite:///./data/lira.db
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - LOG_LEVEL=DEBUG
+      - LOG_LEVEL=INFO
+      # --- LLM provider: "ollama" (default) or "groq" ---
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-gemma3:4b}
+      # Ollama — used when LLM_PROVIDER=ollama
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
+      # Groq — used when LLM_PROVIDER=groq (set GROQ_API_KEY in .env)
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
     depends_on:
-      - ollama
-    command: uv run lira-api --host 0.0.0.0 --port 8001 --reload
+      ollama:
+        condition: service_started
+        required: false
+    restart: unless-stopped
+    command: uv run lira-api --host 0.0.0.0 --port 8001
 
-  # L.I.R.A. CLI (interactive mode)
-  cli:
-    build:
-      context: .
-      target: development
-    volumes:
-      - ./src:/app/src
-      - ./data:/app/data
-    environment:
-      - APP_ENV=development
-      - DATABASE_URL=sqlite:///./data/lira.db
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - CLI_THEME=dark
-    depends_on:
-      - ollama
-    stdin_open: true
-    tty: true
-    command: uv run lira
-
-  # Local LLM (Ollama) - GPU Support
+  # Local LLM (Ollama) — GPU
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -58,7 +47,7 @@ services:
     profiles:
       - gpu
 
-  # Local LLM (Ollama) - CPU Only
+  # Local LLM (Ollama) — CPU only
   ollama-cpu:
     image: ollama/ollama:latest
     ports:
@@ -68,31 +57,5 @@ services:
     profiles:
       - cpu
 
-  # Database (optional - for shared dev)
-  postgres:
-    image: postgres:16-alpine
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: lira
-      POSTGRES_USER: lira
-      POSTGRES_PASSWORD: lira_dev
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    profiles:
-      - postgres
-
-  # Redis for caching (optional)
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    profiles:
-      - cache
-
 volumes:
   ollama_data:
-  postgres_data:
-  redis_data:

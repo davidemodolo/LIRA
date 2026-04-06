@@ -56,8 +56,10 @@ LIRA/
 # Install dependencies
 uv sync
 
-# Run development server
+# Run development server (port 8001)
 uv run fastapi dev src/lira/api/main.py
+# or for production / without fastapi-cli:
+uv run lira-api
 
 # Run CLI (local agent)
 uv run lira --interactive

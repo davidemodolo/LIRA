@@ -1,94 +1,210 @@
-# Project Specification: L.I.R.A.
-**L.I.R.A. (LIRA Is Recursive Accounting** *or* **LIRA Interprets Requests Accurately)**  
-*An AI-native, agentic personal finance and investment tracker. (A nod to the creator's Italian roots and the financial nature of the tool).*
+# L.I.R.A.
 
-**Vision Statement:** This specification outlines the complete, long-term vision for L.I.R.A. While initial development will focus on core database and LLM interactions, the architecture is designed to support the advanced autonomous loops, human-in-the-loop safeguards, and comprehensive investment tracking detailed below.
+**L.I.R.A. (LIRA Is Recursive Accounting)** — an AI-native personal finance and investment tracker.
 
----
-
-### 1. System Architecture & Tech Stack
-*   **Backend Language:** Python 3.10+
-*   **Database:** SQLite (ideal for single-user, file-based portability) managed via an ORM (e.g., SQLAlchemy) to prevent SQL injection and abstract queries.
-*   **Agentic Layer (Model Context Protocol - MCP):** The system utilizes an MCP Server architecture to modularize capabilities. Instead of a monolithic backend, the server exposes:
-    *   **Tools:** Standardized functions the LLM can call (e.g., `execute_sql_select`, `execute_sql_mutate`, `fetch_yfinance_data`, `generate_python_plot`).
-    *   **Prompts/Contexts:** Dedicated interaction templates based on user intent (e.g., `insert_context`, `edit_context`, `analysis_context`, `investment_context`).
-*   **API Layer:** FastAPI to handle communication between the client(s), the MCP server, and the core logic.
-*   **Clients:**
-    *   **CLI:** Python-based terminal interface (using libraries like Rich or Textual for UI).
-    *   **Web Dashboard:** A lightweight frontend (e.g., React, Vue, or HTMX) for advanced data visualization, diff approvals, and chat interfaces.
-*   **AI Integration:** Integration with advanced LLM APIs (e.g., OpenAI, Anthropic) utilizing Function Calling / Tool Use driven by the MCP framework.
+Chat with a local or cloud LLM to log transactions, track investments, query your data in plain English, and approve every mutation before it hits the database.
 
 ---
 
-### 2. Core Modules & Features
+## Features
 
-#### A. The LIRA Agentic Loop (Recursive Execution & Multi-Step Reasoning)
-Unlike traditional one-shot LLM wrappers, L.I.R.A. operates on a recursive "ReAct" (Reason + Act) loop. The agent can plan multi-step workflows, evaluate its own output, and self-correct.
-*   **Self-Correction:** If the user asks for specific data and the agent writes an SQL query that returns `0` results or a syntax error, the agent will catch the error, re-evaluate its logic (e.g., fixing date formats or loosening filters), and re-run the query autonomously before responding to the user.
-*   **Multi-Task Chaining:** For a prompt like: *"Take the last 3 weeks, find all meals related to the canteen, and send me a plot of daily spending,"* the agent will:
-    1. Translate natural language to SQL to fetch the data.
-    2. Analyze the returned dataset.
-    3. Call a plotting tool (e.g., writing a quick Pandas/Matplotlib script) to generate the chart.
-    4. Return the final visual and textual summary to the user.
-
-#### B. Investment & Portfolio Tracking Engine
-L.I.R.A. goes beyond expense tracking to act as an intelligent portfolio manager.
-*   **Natural Language Trade Logging:** The user can input trades conversationally: *"I bought 15 shares of AAPL today at $150 each, plus a $2 fee."*
-*   **Cost Basis & Metrics:** The system automatically calculates and maintains running totals for average share price, total quantities, and realized vs. unrealized P&L.
-*   **External API Integration (yfinance via MCP):** The agent can autonomously ping Yahoo Finance (or similar APIs) to fetch real-time market data to value the current portfolio.
-*   **Tax Computation & Strategy:** The LLM can calculate estimated taxes on capital gains by applying regional tax rules to realized profits, distinguishing between short-term and long-term capital gains based on the holding period of specific lots (e.g., FIFO or LIFO accounting).
-
-#### C. Human-in-the-Loop (HITL) Diff Engine & State Management
-L.I.R.A. operates autonomously but never executes destructive or mutating actions without human consent.
-*   **Pre-Commit Diffing:** Before executing any modifying query (INSERT, UPDATE, DELETE), the backend generates a simulated "Dry Run" state.
-*   **Visual Representation:** The client receives a payload containing the `current_state` and the `proposed_state`. It renders a side-by-side or inline diff (similar to Git diffs in VS Code), showing exactly which rows and columns will change.
-*   **Interactive Confirmation:** The user can accept the diff entirely, reject it, or reply with further natural language instructions to tweak the proposed changes (e.g., *"Keep it, but change the category to 'Groceries' instead of 'Dining', and apply this to the next 5 transactions too"*).
-
-#### D. Git-like Database Versioning
-*   **Transaction Logging:** The system implements a custom version control layer over the database, utilizing Event Sourcing (an append-only log of all financial events) or frequent database snapshotting tools.
-*   **Instant Rollbacks:** If an autonomous bulk update behaves unexpectedly (e.g., an LLM misunderstands *"Halve all lunch expenses"*), the user can simply tell L.I.R.A. to *"Undo the last commit,"* instantly reverting the `.sqlite` file to its previous state.
-
-#### E. Granular Data Retrieval & Dynamic Analytics
-*   **Hyper-Specific Queries:** The agent can translate deeply complex requests into SQL (e.g., *"Show expenses on even days last month in categories A, B, C only if cost > €3"*).
-*   **Dynamic UI Generation:** The web dashboard consumes REST endpoints to render dynamic charts. Instead of hard-coded dashboard widgets, the UI components are dynamically populated by the dataframes the LLM agent prepares in real-time.
-
-#### F. Automation & Ingestion
-*   **Recurring Transactions (Cron/Scheduler):** A daemon handles recurring subscriptions based on LLM-extracted rules (e.g., extracting a cron schedule from *"I pay $10 for Spotify on the 5th of every month"*).
-*   **CSV Parsing & ETL:** The system accepts raw CSV dumps from banks. The agentic loop processes the unstructured rows, auto-categorizes merchants (using zero-shot classification), formats the data, and queues the entire batch into the HITL "Diff Engine" for a single user approval before final insertion.
+- Natural language interface (ReAct agentic loop)
+- Human-in-the-loop diff engine — preview every INSERT / UPDATE before it runs
+- Transaction tracking with categories, payment methods, and secondary categories
+- Investment trade records (buy/sell) with P&L
+- Real-time web dashboard with WebSocket push
+- CLI TUI — run locally or connect to a remote server
+- SQLite (single-file, portable)
 
 ---
 
-### 3. Implementation Status
+## Quick Start — Local Development
 
-#### Implemented
-- Full transaction tracking (income, expense, transfer) with mandatory date field
-- Investment trade records (`investments` table): date, ticker, units, price/unit, fees, trade type (buy/sell), payment method, broker, exchange
-- Payment methods with balance tracking
-- Category hierarchy (primary + secondary)
-- HITL diff engine with per-entry audit log and undo
-- Web dashboard with real-time WebSocket updates (`/ws`)
-- CLI TUI (Textual) — local agent or remote HTTP mode
+### Prerequisites
 
-#### Remote / Container Deployment
-Run L.I.R.A. as a container on a home server (Tailscale or LAN):
+- Python 3.10+
+- [`uv`](https://docs.astral.sh/uv/) package manager
 
 ```bash
-# Server
-uv run fastapi dev src/lira/api/main.py --host 0.0.0.0
+# 1. Clone and install
+git clone <repo>
+cd LIRA
+uv sync
 
-# CLI on client machine — connects to the server
-uv run lira --interactive --server http://homeserver:8000
-# or
-LIRA_API_URL=http://homeserver:8000 uv run lira -i
+# 2. Copy and edit env vars
+cp .env.example .env
+# At minimum set LLM_PROVIDER and either OLLAMA_BASE_URL or GROQ_API_KEY
+
+# 3. Run the API server (auto-creates the database on first start)
+uv run lira-api
+# or with hot-reload for development:
+API_RELOAD=true uv run lira-api
+
+# 4. In a second terminal, open the CLI
+uv run lira --interactive
 ```
 
-The dashboard at `http://homeserver:8000/dashboard` uses a WebSocket to receive
-push notifications when the CLI (or anyone else) adds data — the page refreshes
-without any manual reload.
+The web dashboard is at `http://localhost:8000/dashboard`.
 
-#### MCP Tools
-`create_transaction`, `get_transactions`, `create_investment`, `get_investments`,
-`create_account`, `list_accounts`, `create_payment_method`, `get_payment_methods`,
-`create_category`, `get_categories`, `fetch_stock`, `generate_plot`, `execute_sql`,
-`set_currency`, `update_payment_method_balance`, `transfer_between_payment_methods`,
-`record_gain_loss`, `create_persistent_plot`.
+On first launch with an empty database, both the CLI and the web chat will prompt you to set your currency, payment methods, and categories.
+
+---
+
+## LLM Providers
+
+Set `LLM_PROVIDER` in your `.env` to choose the backend.
+
+### Ollama (default — runs locally)
+
+```env
+LLM_PROVIDER=ollama
+LLM_MODEL=gemma3:4b          # any model pulled in Ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_KEEP_ALIVE=30m
+```
+
+Install Ollama from [ollama.com](https://ollama.com), then pull a model:
+
+```bash
+ollama pull gemma3:4b
+```
+
+### Groq (cloud — fast, free tier available)
+
+```env
+LLM_PROVIDER=groq
+LLM_MODEL=llama-3.3-70b-versatile   # or llama3-8b-8192, mixtral-8x7b-32768, etc.
+GROQ_API_KEY=gsk_...
+```
+
+Get a free API key at [console.groq.com](https://console.groq.com).
+
+---
+
+## Self-Hosting with Docker
+
+### 1. Create a `.env` file
+
+```env
+# Choose your LLM provider
+LLM_PROVIDER=groq           # or ollama
+LLM_MODEL=llama-3.3-70b-versatile
+GROQ_API_KEY=gsk_...
+
+# If using Ollama instead:
+# LLM_PROVIDER=ollama
+# LLM_MODEL=gemma3:4b
+# OLLAMA_BASE_URL=http://ollama:11434
+```
+
+### 2. Start the server
+
+**With Groq (no GPU needed):**
+
+```bash
+docker compose up -d api
+```
+
+**With Ollama on CPU:**
+
+```bash
+docker compose --profile cpu up -d
+```
+
+**With Ollama on GPU (NVIDIA):**
+
+```bash
+docker compose --profile gpu up -d
+```
+
+The server starts at `http://<host>:8000`. The database is persisted in `./data/lira.db`.
+
+### 3. Pull a model (Ollama only)
+
+```bash
+docker compose exec ollama ollama pull gemma3:4b
+```
+
+---
+
+## Connecting the CLI to a Remote Server
+
+Once the server is running (locally or on a home server), connect the CLI from any machine:
+
+```bash
+# Option 1: flag
+uv run lira --interactive --server http://homeserver:8000
+
+# Option 2: env var
+LIRA_API_URL=http://homeserver:8000 uv run lira --interactive
+```
+
+Or set it permanently in your local `.env`:
+
+```env
+LIRA_API_URL=http://homeserver:8000
+```
+
+In remote mode the CLI forwards all messages to the server — no local model or database needed.
+
+The web dashboard at `http://homeserver:8000/dashboard` uses a WebSocket connection and updates in real time whenever the CLI (or anyone else) adds data.
+
+---
+
+## CLI Commands
+
+| Command | Alias | Description |
+|---|---|---|
+| `/trace` | `/t` | Toggle tool trace display |
+| `/show-trace` | `/s` | Show last trace |
+| `/reset` | `/r` | Clear session context |
+| `/clear` | `/c` | Clear message history |
+| `/help` | `/h` | Show available commands |
+| `exit` / `quit` | `/q` | Exit the CLI |
+
+---
+
+## Development
+
+```bash
+# Run tests
+uv run pytest -v
+
+# Lint and format
+uv run ruff check src/
+uv run ruff format src/
+
+# Type check
+uv run mypy src/
+
+# Database migrations
+uv run alembic upgrade head
+uv run alembic revision --autogenerate -m "description"
+```
+
+---
+
+## Project Structure
+
+```
+src/lira/
+├── core/        # Agent loop, LLM layer, config, init
+├── db/          # SQLAlchemy models and session
+├── mcp/         # MCP server, tools, prompts
+├── api/         # FastAPI endpoints + WebSocket
+├── cli/         # Textual TUI
+└── web/         # Dashboard HTML template
+```
+
+---
+
+## Available MCP Tools
+
+`create_transaction`, `get_transactions`, `update_transactions`,
+`create_investment`, `get_investments`,
+`create_account`, `list_accounts`,
+`create_payment_method`, `get_payment_methods`, `update_payment_method_balance`,
+`transfer_between_payment_methods`, `record_gain_loss`,
+`create_category`, `get_categories`,
+`fetch_stock`, `generate_plot`, `create_persistent_plot`,
+`execute_sql`, `set_currency`
