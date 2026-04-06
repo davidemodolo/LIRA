@@ -11,10 +11,13 @@ from sqlalchemy import func, select
 
 from lira.db.models import (
     Account,
+    AssetPrice,
     AuditLog,
     Category,
     DashboardPlot,
     Holding,
+    Investment,
+    InvestmentTradeType,
     PaymentMethod,
     Settings,
     Transaction,
@@ -68,13 +71,34 @@ async def get_summary() -> dict[str, Any]:
         accounts = session.execute(select(Account)).scalars().all()
         payment_methods = session.execute(select(PaymentMethod)).scalars().all()
         transactions = session.execute(select(Transaction)).scalars().all()
-        holdings = session.execute(select(Holding)).scalars().all()
         categories = session.execute(select(Category)).scalars().all()
 
-        total_payment_balance = sum(pm.balance for pm in payment_methods)
-        total_investments = sum(float(h.quantity * (h.current_price or 0)) for h in holdings)
+        # Portfolio value: aggregate net_units × current_price from asset_prices
+        investments = session.execute(select(Investment)).scalars().all()
+        asset_prices = {
+            ap.ticker: ap.current_price
+            for ap in session.execute(select(AssetPrice)).scalars().all()
+        }
 
-        # Calculate total expenses (negative expenses)
+        # Build net units per ticker
+        net_units: dict[str, Decimal] = {}
+        for inv in investments:
+            sym = inv.ticker
+            if sym not in net_units:
+                net_units[sym] = Decimal("0")
+            if inv.trade_type == InvestmentTradeType.BUY:
+                net_units[sym] += inv.units
+            else:
+                net_units[sym] -= inv.units
+
+        total_investments = sum(
+            float(units * asset_prices[sym])
+            for sym, units in net_units.items()
+            if units > 0 and sym in asset_prices
+        )
+
+        total_payment_balance = sum(pm.balance for pm in payment_methods)
+
         total_expenses = sum(
             abs(t.amount) for t in transactions if t.transaction_type == TransactionType.EXPENSE
         )
@@ -89,7 +113,7 @@ async def get_summary() -> dict[str, Any]:
             "total_transactions": len(transactions),
             "total_categories": len(categories),
             "total_payment_methods": len(payment_methods),
-            "total_holdings": len(holdings),
+            "total_holdings": len(net_units),
             "payment_balance": float(total_payment_balance),
             "investments": total_investments,
             "total_income": float(total_income),
@@ -264,6 +288,154 @@ async def get_holdings() -> list[dict[str, Any]]:
         ]
 
 
+@router.get("/investments")
+async def get_investments(
+    ticker: str | None = Query(None),
+    trade_type: str | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    limit: int = Query(200, le=1000),
+    offset: int = Query(0),
+) -> dict[str, Any]:
+    """Get investment trades with optional filters."""
+    from sqlalchemy.orm import joinedload
+
+    with DatabaseSession() as session:
+        query = select(Investment).options(
+            joinedload(Investment.payment_method),
+        )
+
+        if ticker:
+            query = query.filter(Investment.ticker == ticker.upper())
+        if trade_type:
+            query = query.filter(Investment.trade_type == InvestmentTradeType(trade_type.lower()))
+        if start_date:
+            query = query.filter(Investment.date >= datetime.fromisoformat(start_date))
+        if end_date:
+            query = query.filter(Investment.date <= datetime.fromisoformat(end_date))
+
+        count_q = select(func.count(Investment.id))
+        if ticker:
+            count_q = count_q.filter(Investment.ticker == ticker.upper())
+        if trade_type:
+            count_q = count_q.filter(
+                Investment.trade_type == InvestmentTradeType(trade_type.lower())
+            )
+        if start_date:
+            count_q = count_q.filter(Investment.date >= datetime.fromisoformat(start_date))
+        if end_date:
+            count_q = count_q.filter(Investment.date <= datetime.fromisoformat(end_date))
+        total = session.execute(count_q).scalar() or 0
+
+        query = query.order_by(Investment.date.desc()).offset(offset).limit(limit)
+        investments = session.execute(query).unique().scalars().all()
+
+        return {
+            "total": total,
+            "investments": [
+                {
+                    "id": inv.id,
+                    "date": inv.date.isoformat(),
+                    "ticker": inv.ticker,
+                    "units": float(inv.units),
+                    "price_per_unit": float(inv.price_per_unit),
+                    "fees": float(inv.fees),
+                    "total_amount": float(inv.total_amount),
+                    "trade_type": inv.trade_type.value,
+                    "currency": inv.currency,
+                    "broker": inv.broker,
+                    "exchange": inv.exchange,
+                    "payment_method_name": (
+                        inv.payment_method.name if inv.payment_method else "-"
+                    ),
+                    "notes": inv.notes,
+                }
+                for inv in investments
+            ],
+        }
+
+
+@router.get("/portfolio-summary")
+async def get_portfolio_summary() -> dict[str, Any]:
+    """Get aggregated portfolio positions with P&L per ticker."""
+    with DatabaseSession() as session:
+        investments = session.execute(select(Investment)).scalars().all()
+        prices = {
+            ap.ticker: ap
+            for ap in session.execute(select(AssetPrice)).scalars().all()
+        }
+
+        tickers_data: dict[str, dict[str, Any]] = {}
+        for inv in investments:
+            sym = inv.ticker
+            if sym not in tickers_data:
+                tickers_data[sym] = {
+                    "ticker": sym,
+                    "buy_units": Decimal("0"),
+                    "sell_units": Decimal("0"),
+                    "buy_cost": Decimal("0"),
+                    "currency": inv.currency,
+                }
+            d = tickers_data[sym]
+            if inv.trade_type == InvestmentTradeType.BUY:
+                d["buy_units"] += inv.units
+                d["buy_cost"] += inv.units * inv.price_per_unit + inv.fees
+            else:
+                d["sell_units"] += inv.units
+
+        positions = []
+        total_market_value = Decimal("0")
+        total_cost_basis = Decimal("0")
+
+        for sym, d in tickers_data.items():
+            net_units = d["buy_units"] - d["sell_units"]
+            avg_cost = d["buy_cost"] / d["buy_units"] if d["buy_units"] > 0 else Decimal("0")
+            cost_basis = max(net_units, Decimal("0")) * avg_cost
+            ap = prices.get(sym)
+            current_price = ap.current_price if ap else None
+
+            if current_price is not None and net_units > 0:
+                market_value = net_units * current_price
+                unrealized_pnl = market_value - cost_basis
+                unrealized_pnl_pct = float(unrealized_pnl / cost_basis * 100) if cost_basis > 0 else 0.0
+                total_market_value += market_value
+                total_cost_basis += cost_basis
+            else:
+                market_value = cost_basis if net_units > 0 else Decimal("0")
+                unrealized_pnl = None
+                unrealized_pnl_pct = None
+                if net_units > 0:
+                    total_market_value += market_value
+                    total_cost_basis += cost_basis
+
+            positions.append({
+                "ticker": sym,
+                "net_units": float(net_units),
+                "avg_cost_per_unit": float(avg_cost),
+                "cost_basis": float(cost_basis),
+                "current_price": float(current_price) if current_price is not None else None,
+                "market_value": float(market_value),
+                "unrealized_pnl": float(unrealized_pnl) if unrealized_pnl is not None else None,
+                "unrealized_pnl_pct": unrealized_pnl_pct,
+                "currency": d["currency"],
+                "last_price_update": ap.last_updated.isoformat() if ap else None,
+                "status": "open" if net_units > 0 else "closed",
+            })
+
+        return {
+            "positions": sorted(positions, key=lambda x: x["market_value"], reverse=True),
+            "summary": {
+                "total_market_value": float(total_market_value),
+                "total_cost_basis": float(total_cost_basis),
+                "total_unrealized_pnl": float(total_market_value - total_cost_basis),
+                "total_unrealized_pnl_pct": (
+                    float((total_market_value - total_cost_basis) / total_cost_basis * 100)
+                    if total_cost_basis > 0 else 0.0
+                ),
+            },
+        }
+
+
 @router.get("/spending-by-category")
 async def get_spending_by_category(
     months: int = Query(12),
@@ -294,10 +466,28 @@ async def get_net_worth_history(
     """Get net worth history (payment methods + investments) for the last N months."""
     with DatabaseSession() as session:
         payment_methods = session.execute(select(PaymentMethod)).scalars().all()
-        holdings = session.execute(select(Holding)).scalars().all()
+        investments = session.execute(select(Investment)).scalars().all()
+        asset_prices = {
+            ap.ticker: ap.current_price
+            for ap in session.execute(select(AssetPrice)).scalars().all()
+        }
+
+        net_units: dict[str, Decimal] = {}
+        for inv in investments:
+            sym = inv.ticker
+            if sym not in net_units:
+                net_units[sym] = Decimal("0")
+            if inv.trade_type == InvestmentTradeType.BUY:
+                net_units[sym] += inv.units
+            else:
+                net_units[sym] -= inv.units
 
         total_payment = sum(pm.balance for pm in payment_methods)
-        total_investments = sum(float(h.quantity * (h.current_price or 0)) for h in holdings)
+        total_investments = sum(
+            float(units * asset_prices[sym])
+            for sym, units in net_units.items()
+            if units > 0 and sym in asset_prices
+        )
 
         history = []
         today = datetime.now()

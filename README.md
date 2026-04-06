@@ -55,3 +55,40 @@ L.I.R.A. operates autonomously but never executes destructive or mutating action
 #### F. Automation & Ingestion
 *   **Recurring Transactions (Cron/Scheduler):** A daemon handles recurring subscriptions based on LLM-extracted rules (e.g., extracting a cron schedule from *"I pay $10 for Spotify on the 5th of every month"*).
 *   **CSV Parsing & ETL:** The system accepts raw CSV dumps from banks. The agentic loop processes the unstructured rows, auto-categorizes merchants (using zero-shot classification), formats the data, and queues the entire batch into the HITL "Diff Engine" for a single user approval before final insertion.
+
+---
+
+### 3. Implementation Status
+
+#### Implemented
+- Full transaction tracking (income, expense, transfer) with mandatory date field
+- Investment trade records (`investments` table): date, ticker, units, price/unit, fees, trade type (buy/sell), payment method, broker, exchange
+- Payment methods with balance tracking
+- Category hierarchy (primary + secondary)
+- HITL diff engine with per-entry audit log and undo
+- Web dashboard with real-time WebSocket updates (`/ws`)
+- CLI TUI (Textual) — local agent or remote HTTP mode
+
+#### Remote / Container Deployment
+Run L.I.R.A. as a container on a home server (Tailscale or LAN):
+
+```bash
+# Server
+uv run fastapi dev src/lira/api/main.py --host 0.0.0.0
+
+# CLI on client machine — connects to the server
+uv run lira --interactive --server http://homeserver:8000
+# or
+LIRA_API_URL=http://homeserver:8000 uv run lira -i
+```
+
+The dashboard at `http://homeserver:8000/dashboard` uses a WebSocket to receive
+push notifications when the CLI (or anyone else) adds data — the page refreshes
+without any manual reload.
+
+#### MCP Tools
+`create_transaction`, `get_transactions`, `create_investment`, `get_investments`,
+`create_account`, `list_accounts`, `create_payment_method`, `get_payment_methods`,
+`create_category`, `get_categories`, `fetch_stock`, `generate_plot`, `execute_sql`,
+`set_currency`, `update_payment_method_balance`, `transfer_between_payment_methods`,
+`record_gain_loss`, `create_persistent_plot`.

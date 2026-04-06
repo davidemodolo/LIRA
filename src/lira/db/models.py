@@ -240,6 +240,77 @@ class Transaction(Base):
     )
 
 
+class InvestmentTradeType(str, enum.Enum):
+    """Trade direction for investments."""
+
+    BUY = "buy"
+    SELL = "sell"
+
+
+class Investment(Base):
+    """Investment transaction record.
+
+    Represents a single buy or sell operation for a financial instrument
+    (stock, ETF, bond, crypto, etc.). Each row is one trade execution.
+    """
+
+    __tablename__ = "investments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    units: Mapped[Decimal] = mapped_column(Numeric(19, 8), nullable=False)
+    price_per_unit: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
+    fees: Mapped[Decimal] = mapped_column(Numeric(19, 4), default=Decimal("0"), nullable=False)
+    trade_type: Mapped[InvestmentTradeType] = mapped_column(
+        Enum(InvestmentTradeType), nullable=False
+    )
+    payment_method_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("payment_methods.id"), nullable=True
+    )
+    account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id"), nullable=True
+    )
+    currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
+    broker: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    payment_method: Mapped[PaymentMethod | None] = relationship("PaymentMethod")
+    account: Mapped[Account | None] = relationship("Account")
+
+    @property
+    def total_amount(self) -> Decimal:
+        """Total cost of the trade: units * price + fees."""
+        return self.units * self.price_per_unit + self.fees
+
+    __table_args__ = (
+        Index("ix_investments_ticker_date", "ticker", "date"),
+        Index("ix_investments_date", "date"),
+    )
+
+
+class AssetPrice(Base):
+    """Current market price for an asset/ticker.
+
+    One row per ticker. Updated by the `update_asset_prices` MCP tool.
+    Used for real-time portfolio valuation and net-worth calculation.
+    """
+
+    __tablename__ = "asset_prices"
+
+    ticker: Mapped[str] = mapped_column(String(20), primary_key=True)
+    current_price: Mapped[Decimal] = mapped_column(Numeric(19, 4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
+    last_updated: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(50), default="manual", nullable=False
+    )  # "yfinance" or "manual"
+
+
 class Portfolio(Base):
     """Investment portfolio model.
 
@@ -523,5 +594,38 @@ class HoldingSchema(BaseModel):
     average_cost: Decimal
     current_price: Decimal | None = None
     last_updated: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class InvestmentSchema(BaseModel):
+    """Pydantic schema for Investment."""
+
+    id: int
+    date: datetime
+    ticker: str
+    units: Decimal
+    price_per_unit: Decimal
+    fees: Decimal
+    trade_type: InvestmentTradeType
+    payment_method_id: int | None = None
+    account_id: int | None = None
+    currency: str
+    broker: str | None = None
+    exchange: str | None = None
+    notes: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AssetPriceSchema(BaseModel):
+    """Pydantic schema for AssetPrice."""
+
+    ticker: str
+    current_price: Decimal
+    currency: str
+    last_updated: datetime
+    source: str
 
     model_config = {"from_attributes": True}

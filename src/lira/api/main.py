@@ -6,10 +6,12 @@ which is mostly used for the agentic loop communication layer.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
 
 from lira.api.routes import dashboard as dashboard_routes
 from lira.api.routes import plots as plots_routes
+from lira.api.ws import manager as ws_manager
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -70,10 +73,19 @@ def get_db() -> Iterator[Session]:
 # Initialize application
 init_database()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    """Store the running event loop on startup so WebSocket broadcasts work."""
+    ws_manager._loop = asyncio.get_running_loop()
+    yield
+
+
 app = FastAPI(
     title="L.I.R.A. API",
     description="Agentic framework for L.I.R.A. running via fastmcp",
     version=__version__,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -115,6 +127,22 @@ async def health_check() -> dict[str, str]:
     return {"status": "healthy"}
 
 
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time dashboard updates.
+
+    The dashboard connects here and receives `data_changed` events whenever
+    a mutation (transaction, investment, etc.) is committed on the server.
+    """
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Keep the connection alive; client sends periodic pings
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+
 @app.post("/api/chat", response_model=AgentChatResponse, tags=["agent"])
 async def chat_with_agent(request: AgentChatRequest) -> Any:
     """Chat with the L.I.R.A. agent."""
@@ -136,12 +164,18 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
                 import json
                 from dataclasses import asdict
 
+                mutated = False
                 async for event in agent.run_stream(prompt, history):
                     yield json.dumps(asdict(event)) + "\n"
+                    if event.kind == "tool_result":
+                        mutated = True
+                if mutated:
+                    await ws_manager.broadcast({"type": "data_changed"})
 
             return StreamingResponse(generate(), media_type="application/x-ndjson")
 
         trace_events: list[dict[str, Any]] = []
+        mutated = False
 
         async for event in agent.run_stream(prompt, history):
             if event.kind in {"status", "tool_call", "tool_result", "llm_token"}:
@@ -152,8 +186,13 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
                         "payload": event.payload,
                     }
                 )
+            if event.kind == "tool_result":
+                mutated = True
 
         result = await agent.run(prompt, history)
+
+        if mutated:
+            await ws_manager.broadcast({"type": "data_changed"})
 
         return AgentChatResponse(
             message=ChatMessage(role="assistant", content=result.message),
@@ -200,6 +239,9 @@ async def confirm_mutations(request: ConfirmRequest) -> Any:
                 resp = event.payload.get("response")
                 if resp:
                     final_message = resp.message
+
+        if results:
+            await ws_manager.broadcast({"type": "data_changed"})
 
         return AgentChatResponse(
             message=ChatMessage(role="assistant", content=final_message),

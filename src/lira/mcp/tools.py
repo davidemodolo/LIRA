@@ -22,8 +22,11 @@ logger = logging.getLogger(__name__)
 from lira.db.models import (
     Account,
     AccountType,
+    AssetPrice,
     Category,
     Holding,
+    Investment,
+    InvestmentTradeType,
     Transaction,
     TransactionType,
 )
@@ -163,6 +166,7 @@ async def create_transaction(
     secondary_category_name: str | None = None,
     payment_method_id: int | None = None,
     payment_method_name: str | None = None,
+    date: str | None = None,
 ) -> dict[str, Any]:
     """Create a new real-world financial transaction representing an income or expense.
 
@@ -175,19 +179,21 @@ async def create_transaction(
         amount: The monetary value of the transaction. Always pass a positive number — the transaction_type determines whether it adds or subtracts from balances.
         transaction_type: 'expense', 'income', or 'transfer'. Affects account balance logic.
         description: A short memo describing the purchase, vendor, or reasoning.
+        merchant: The merchant or payee name.
         category_id: The primary category id (use get_categories to find ids).
         category_name: The primary category name (e.g., "FOOD", "FOOD > groceries"). If provided, resolves to id.
         secondary_category_id: The secondary category id for additional categorization.
         secondary_category_name: The secondary category name.
         payment_method_id: The payment method id (use get_payment_methods to find ids).
         payment_method_name: The payment method name (e.g., "Cash", "Debit Card"). If provided, resolves to ID.
+        date: The transaction date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS). Defaults to now.
 
     Returns:
         A dictionary containing the generated transaction id, actual logged amount, and recorded type.
     """
     from sqlalchemy import func, select
 
-    from lira.db.models import Category, PaymentMethod
+    from lira.db.models import PaymentMethod
 
     with DatabaseSession() as session:
         if not account_id:
@@ -250,6 +256,16 @@ async def create_transaction(
         # Accept negative amounts from LLM but normalise to positive.
         abs_amount = abs(Decimal(str(amount)))
 
+        # Parse or default the transaction date
+        tx_date: datetime
+        if date:
+            try:
+                tx_date = datetime.fromisoformat(date)
+            except ValueError:
+                tx_date = datetime.now()
+        else:
+            tx_date = datetime.now()
+
         transaction = Transaction(
             account_id=account_id,
             transaction_type=tx_type,
@@ -259,7 +275,7 @@ async def create_transaction(
             category_id=category_id,
             secondary_category_id=secondary_category_id,
             payment_method_id=payment_method_id,
-            date=datetime.now(),
+            date=tx_date,
         )
 
         # Update account balance (expense = subtract, income = add)
@@ -800,6 +816,7 @@ async def create_category(
         A dictionary containing the generated category id, name, and parent_id.
     """
     from sqlalchemy import func, select
+
     from lira.db.models import Category
     from lira.db.session import DatabaseSession
 
@@ -998,6 +1015,437 @@ async def record_gain_loss(payment_method_name: str, amount: float) -> dict[str,
     from lira.core.init import gain_loss_payment_method as gain_loss_func
 
     return gain_loss_func(payment_method_name, amount)
+
+
+@mcp.tool()
+async def create_investment(
+    date: str,
+    ticker: str,
+    units: float,
+    price_per_unit: float,
+    trade_type: str = "buy",
+    fees: float = 0.0,
+    payment_method_id: int | None = None,
+    payment_method_name: str | None = None,
+    account_id: int | None = None,
+    currency: str = "USD",
+    broker: str | None = None,
+    exchange: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Record a new investment trade (buy or sell) for a financial instrument.
+
+    This tool logs a single investment transaction (e.g., buying 10 shares of AAPL).
+    It stores the full details needed for cost-basis and portfolio tracking.
+
+    Args:
+        date: Trade execution date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS).
+        ticker: The instrument symbol (e.g., 'AAPL', 'VTI', 'BTC-USD').
+        units: Number of units/shares traded. Always pass a positive number.
+        price_per_unit: Price paid or received per unit in the specified currency.
+        trade_type: 'buy' (acquiring units) or 'sell' (disposing units). Default: 'buy'.
+        fees: Brokerage commissions or transaction fees. Default: 0.
+        payment_method_id: Payment method used to fund the purchase (use get_payment_methods).
+        payment_method_name: Payment method name (e.g., "Brokerage Account"). Resolved to id.
+        account_id: Optional account id to associate with this investment.
+        currency: Currency of the trade (e.g., 'USD', 'EUR'). Default: 'USD'.
+        broker: Name of the brokerage or exchange (e.g., 'Interactive Brokers').
+        exchange: Stock exchange (e.g., 'NASDAQ', 'NYSE').
+        notes: Optional free-text notes about the trade.
+
+    Returns:
+        Dictionary with id, ticker, units, price_per_unit, total_amount, and trade_type.
+    """
+    from sqlalchemy import func, select
+
+    from lira.db.models import PaymentMethod
+
+    with DatabaseSession() as session:
+        # Parse date
+        try:
+            trade_date = datetime.fromisoformat(date)
+        except ValueError as e:
+            raise ValueError(f"Invalid date format: {date}. Use YYYY-MM-DD.") from e
+
+        # Resolve payment method
+        pm_id: int | None = payment_method_id
+        if payment_method_name and not pm_id:
+            pm = session.execute(
+                select(PaymentMethod).where(
+                    func.lower(PaymentMethod.name) == payment_method_name.lower()
+                )
+            ).scalar_one_or_none()
+            if pm:
+                pm_id = pm.id
+            else:
+                raise ValueError(f"Payment method '{payment_method_name}' not found")
+
+        trade_type_enum = InvestmentTradeType(trade_type.lower())
+        abs_units = abs(Decimal(str(units)))
+        abs_price = abs(Decimal(str(price_per_unit)))
+        abs_fees = abs(Decimal(str(fees)))
+        total = abs_units * abs_price + abs_fees
+
+        # Fetch payment method for balance adjustment
+        pm_obj: PaymentMethod | None = None
+        if pm_id:
+            pm_obj = session.execute(
+                select(PaymentMethod).where(PaymentMethod.id == pm_id)
+            ).scalar_one_or_none()
+
+        investment = Investment(
+            date=trade_date,
+            ticker=ticker.upper(),
+            units=abs_units,
+            price_per_unit=abs_price,
+            fees=abs_fees,
+            trade_type=trade_type_enum,
+            payment_method_id=pm_id,
+            account_id=account_id,
+            currency=currency.upper(),
+            broker=broker,
+            exchange=exchange,
+            notes=notes,
+        )
+        session.add(investment)
+
+        # Adjust payment method balance:
+        # BUY  → debit (funds leave the payment method)
+        # SELL → credit (proceeds arrive)
+        if pm_obj is not None:
+            if trade_type_enum == InvestmentTradeType.BUY:
+                pm_obj.balance -= total
+            else:
+                pm_obj.balance += total
+
+        # Seed/update asset price with the trade price so we have at least
+        # a baseline current price before the first yfinance refresh.
+        existing_price = session.execute(
+            select(AssetPrice).where(AssetPrice.ticker == ticker.upper())
+        ).scalar_one_or_none()
+        if existing_price is None:
+            session.add(
+                AssetPrice(
+                    ticker=ticker.upper(),
+                    current_price=abs_price,
+                    currency=currency.upper(),
+                    last_updated=trade_date,
+                    source="trade",
+                )
+            )
+
+        session.commit()
+        session.refresh(investment)
+
+        return {
+            "id": investment.id,
+            "date": investment.date.isoformat(),
+            "ticker": investment.ticker,
+            "units": float(investment.units),
+            "price_per_unit": float(investment.price_per_unit),
+            "fees": float(investment.fees),
+            "total_amount": float(total),
+            "trade_type": investment.trade_type.value,
+            "currency": investment.currency,
+            "broker": investment.broker,
+            "payment_method_balance_after": float(pm_obj.balance) if pm_obj else None,
+        }
+
+
+@mcp.tool()
+async def get_investments(
+    ticker: str | None = None,
+    trade_type: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Retrieve investment trades with optional filters.
+
+    Returns a list of recorded investment transactions. Use this to review
+    trade history, compute portfolio cost basis, or audit a specific ticker.
+
+    Args:
+        ticker: Filter by instrument symbol (e.g., 'AAPL'). Case-insensitive.
+        trade_type: Filter by 'buy' or 'sell'.
+        start_date: Only trades on or after this date (YYYY-MM-DD).
+        end_date: Only trades on or before this date (YYYY-MM-DD).
+        limit: Maximum number of records to return. Default: 100.
+
+    Returns:
+        Dictionary with count and list of investment trade records.
+    """
+    with DatabaseSession() as session:
+        query = session.query(Investment)
+
+        if ticker:
+            query = query.filter(Investment.ticker == ticker.upper())
+        if trade_type:
+            query = query.filter(Investment.trade_type == InvestmentTradeType(trade_type.lower()))
+        if start_date:
+            query = query.filter(Investment.date >= datetime.fromisoformat(start_date))
+        if end_date:
+            query = query.filter(Investment.date <= datetime.fromisoformat(end_date))
+
+        investments = query.order_by(Investment.date.desc()).limit(limit).all()
+
+        records = [
+            {
+                "id": inv.id,
+                "date": inv.date.isoformat(),
+                "ticker": inv.ticker,
+                "units": float(inv.units),
+                "price_per_unit": float(inv.price_per_unit),
+                "fees": float(inv.fees),
+                "total_amount": float(inv.total_amount),
+                "trade_type": inv.trade_type.value,
+                "currency": inv.currency,
+                "broker": inv.broker,
+                "exchange": inv.exchange,
+                "notes": inv.notes,
+            }
+            for inv in investments
+        ]
+
+        return {"count": len(records), "investments": records}
+
+
+@mcp.tool()
+async def set_asset_price(
+    ticker: str,
+    price: float,
+    currency: str = "USD",
+) -> dict[str, Any]:
+    """Manually set the current price of an asset.
+
+    Use this when yfinance doesn't have the asset (e.g. private equity, crypto on
+    a niche exchange, real estate) or when the user explicitly states a price:
+    "ACME currently costs 150 EUR".
+
+    Args:
+        ticker: The asset symbol (e.g. 'ACME', 'BTC-USD'). Case-insensitive.
+        price: The current price per unit.
+        currency: Currency code for the price (e.g. 'EUR', 'USD'). Default: 'USD'.
+
+    Returns:
+        Dictionary with ticker, price, currency, and previous price (if any).
+    """
+    with DatabaseSession() as session:
+        sym = ticker.upper()
+        price_dec = Decimal(str(abs(price)))
+        now = datetime.now()
+
+        existing = session.execute(
+            select(AssetPrice).where(AssetPrice.ticker == sym)
+        ).scalar_one_or_none()
+
+        previous_price = float(existing.current_price) if existing else None
+
+        if existing:
+            existing.current_price = price_dec
+            existing.currency = currency.upper()
+            existing.last_updated = now
+            existing.source = "manual"
+        else:
+            session.add(AssetPrice(
+                ticker=sym,
+                current_price=price_dec,
+                currency=currency.upper(),
+                last_updated=now,
+                source="manual",
+            ))
+
+        session.commit()
+
+    return {
+        "ticker": sym,
+        "price": float(price_dec),
+        "currency": currency.upper(),
+        "previous_price": previous_price,
+        "source": "manual",
+    }
+
+
+@mcp.tool()
+async def update_asset_prices(
+    tickers: list[str] | None = None,
+) -> dict[str, Any]:
+    """Fetch current market prices from Yahoo Finance and update the asset_prices table.
+
+    Call this whenever the user asks to "update prices", "refresh portfolio value",
+    or wants to see up-to-date net worth including investments.
+
+    Args:
+        tickers: Optional list of ticker symbols to update (e.g. ['AAPL', 'VTI']).
+                 If omitted, all tickers present in the investments table are updated.
+
+    Returns:
+        Dictionary with updated ticker prices and any errors.
+    """
+    with DatabaseSession() as session:
+        if not tickers:
+            rows = session.execute(
+                select(Investment.ticker).distinct()
+            ).scalars().all()
+            tickers = list(rows)
+
+        if not tickers:
+            return {"updated": [], "errors": [], "message": "No tickers found in investments."}
+
+        updated = []
+        errors = []
+        now = datetime.now()
+
+        for sym in tickers:
+            sym = sym.upper()
+            try:
+                info = yf.Ticker(sym).info
+                price = info.get("currentPrice") or info.get("regularMarketPrice")
+                if price is None:
+                    errors.append({"ticker": sym, "error": "No price returned by yfinance"})
+                    continue
+                currency = info.get("currency", "USD")
+                price_dec = Decimal(str(price))
+
+                existing = session.execute(
+                    select(AssetPrice).where(AssetPrice.ticker == sym)
+                ).scalar_one_or_none()
+                if existing:
+                    existing.current_price = price_dec
+                    existing.currency = currency
+                    existing.last_updated = now
+                    existing.source = "yfinance"
+                else:
+                    session.add(
+                        AssetPrice(
+                            ticker=sym,
+                            current_price=price_dec,
+                            currency=currency,
+                            last_updated=now,
+                            source="yfinance",
+                        )
+                    )
+                updated.append({"ticker": sym, "price": float(price_dec), "currency": currency})
+            except Exception as exc:
+                errors.append({"ticker": sym, "error": str(exc)})
+
+        session.commit()
+
+    return {"updated": updated, "errors": errors}
+
+
+@mcp.tool()
+async def get_portfolio_summary() -> dict[str, Any]:
+    """Return an aggregated portfolio summary per ticker with P&L.
+
+    Aggregates all investment trades to compute for each ticker:
+    - net_units (buy_units − sell_units)
+    - avg_cost_per_unit (weighted average of buy trades)
+    - cost_basis (net_units × avg_cost)
+    - current_price (from asset_prices table)
+    - market_value (net_units × current_price)
+    - unrealized_pnl and unrealized_pnl_pct
+
+    Also computes total portfolio market value for use in net-worth calculations.
+
+    Returns:
+        Dictionary with per-ticker positions and portfolio totals.
+    """
+    with DatabaseSession() as session:
+        investments = session.execute(select(Investment)).scalars().all()
+
+        # Aggregate per ticker
+        tickers_data: dict[str, dict[str, Any]] = {}
+        for inv in investments:
+            sym = inv.ticker
+            if sym not in tickers_data:
+                tickers_data[sym] = {
+                    "ticker": sym,
+                    "buy_units": Decimal("0"),
+                    "sell_units": Decimal("0"),
+                    "buy_cost": Decimal("0"),  # sum of units*price for buys
+                    "currency": inv.currency,
+                    "broker": inv.broker,
+                    "exchange": inv.exchange,
+                }
+            d = tickers_data[sym]
+            if inv.trade_type == InvestmentTradeType.BUY:
+                d["buy_units"] += inv.units
+                d["buy_cost"] += inv.units * inv.price_per_unit + inv.fees
+            else:
+                d["sell_units"] += inv.units
+
+        # Fetch current prices
+        prices = {
+            ap.ticker: ap
+            for ap in session.execute(select(AssetPrice)).scalars().all()
+        }
+
+        positions = []
+        total_market_value = Decimal("0")
+        total_cost_basis = Decimal("0")
+
+        for sym, d in tickers_data.items():
+            net_units = d["buy_units"] - d["sell_units"]
+            if net_units <= 0:
+                # Fully sold position
+                positions.append({
+                    "ticker": sym,
+                    "net_units": 0.0,
+                    "avg_cost_per_unit": None,
+                    "cost_basis": 0.0,
+                    "current_price": None,
+                    "market_value": 0.0,
+                    "unrealized_pnl": None,
+                    "unrealized_pnl_pct": None,
+                    "currency": d["currency"],
+                    "status": "closed",
+                })
+                continue
+
+            avg_cost = d["buy_cost"] / d["buy_units"] if d["buy_units"] > 0 else Decimal("0")
+            cost_basis = net_units * avg_cost
+            ap = prices.get(sym)
+            current_price = ap.current_price if ap else None
+            if current_price is not None:
+                market_value = net_units * current_price
+                unrealized_pnl = market_value - cost_basis
+                unrealized_pnl_pct = float(unrealized_pnl / cost_basis * 100) if cost_basis > 0 else 0.0
+                total_market_value += market_value
+                total_cost_basis += cost_basis
+            else:
+                market_value = cost_basis  # fallback: use cost
+                unrealized_pnl = None
+                unrealized_pnl_pct = None
+                total_market_value += market_value
+                total_cost_basis += cost_basis
+
+            positions.append({
+                "ticker": sym,
+                "net_units": float(net_units),
+                "avg_cost_per_unit": float(avg_cost),
+                "cost_basis": float(cost_basis),
+                "current_price": float(current_price) if current_price is not None else None,
+                "market_value": float(market_value),
+                "unrealized_pnl": float(unrealized_pnl) if unrealized_pnl is not None else None,
+                "unrealized_pnl_pct": unrealized_pnl_pct,
+                "currency": d["currency"],
+                "last_price_update": ap.last_updated.isoformat() if ap else None,
+                "status": "open",
+            })
+
+        return {
+            "positions": sorted(positions, key=lambda x: x["market_value"], reverse=True),
+            "summary": {
+                "total_market_value": float(total_market_value),
+                "total_cost_basis": float(total_cost_basis),
+                "total_unrealized_pnl": float(total_market_value - total_cost_basis),
+                "total_unrealized_pnl_pct": (
+                    float((total_market_value - total_cost_basis) / total_cost_basis * 100)
+                    if total_cost_basis > 0 else 0.0
+                ),
+            },
+        }
 
 
 @mcp.tool()

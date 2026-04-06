@@ -679,24 +679,69 @@
 
         <!-- Investments Section -->
         <section id="investments-section">
-            <div class="section-header">
-                <div class="section-title">investments</div>
-                <div class="section-subtitle">portfolio holdings</div>
+            <!-- Portfolio summary -->
+            <div class="section-header" style="display:flex; justify-content:space-between; align-items:flex-end;">
+                <div>
+                    <div class="section-title">portfolio</div>
+                    <div class="section-subtitle">current positions &amp; unrealized P&amp;L</div>
+                </div>
+                <button id="update-prices-btn" onclick="updatePrices()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 12px; font-family:var(--mono); font-size:11px; cursor:pointer;">[update prices]</button>
+            </div>
+            <div class="table-wrap" style="margin-bottom:24px;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ticker</th>
+                            <th class="right">net units</th>
+                            <th class="right">avg cost</th>
+                            <th class="right">cost basis</th>
+                            <th class="right">cur. price</th>
+                            <th class="right">market value</th>
+                            <th class="right">unreal. P&amp;L</th>
+                            <th class="right">P&amp;L %</th>
+                            <th>last updated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="portfolio-table">
+                        <tr><td colspan="9" style="color:var(--text-muted); text-align:center; padding:24px;">loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Trade history -->
+            <div class="section-header" style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:8px;">
+                <div>
+                    <div class="section-title" style="font-size:13px;">trade history</div>
+                    <div class="section-subtitle">buy &amp; sell records</div>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="text" id="filter-inv-ticker" placeholder="ticker..." onchange="loadInvestments()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px; width:90px;">
+                    <select id="filter-inv-type" onchange="loadInvestments()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
+                        <option value="">all trades</option>
+                        <option value="buy">buy</option>
+                        <option value="sell">sell</option>
+                    </select>
+                    <input type="date" id="filter-inv-start" onchange="loadInvestments()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
+                    <input type="date" id="filter-inv-end" onchange="loadInvestments()" style="background:var(--bg2); border:1px solid var(--border2); color:var(--text); padding:5px 8px; font-family:var(--mono); font-size:11px;">
+                </div>
             </div>
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th>symbol</th>
-                            <th>name</th>
-                            <th class="right">qty</th>
-                            <th class="right">avg cost</th>
-                            <th class="right">price</th>
-                            <th class="right">market value</th>
+                            <th>date</th>
+                            <th>type</th>
+                            <th>ticker</th>
+                            <th class="right">units</th>
+                            <th class="right">price/unit</th>
+                            <th class="right">fees</th>
+                            <th class="right">total</th>
+                            <th>payment method</th>
+                            <th>broker</th>
                         </tr>
                     </thead>
-                    <tbody id="holdings-table">
-                        <tr><td colspan="6" style="color:var(--text-muted); text-align:center; padding:24px;">loading...</td></tr>
+                    <tbody id="investments-table">
+                        <tr><td colspan="9" style="color:var(--text-muted); text-align:center; padding:24px;">loading...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -860,6 +905,51 @@
             userCurrency = s.currency || 'USD';
         } catch (e) {}
         showSection('dashboard');
+        initWebSocket();
+    }
+
+    // ============================================================
+    // WebSocket — real-time refresh when server data changes
+    // ============================================================
+    let _wsReconnectTimer = null;
+
+    function initWebSocket() {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const wsUrl = `${proto}://${location.host}/ws`;
+        let ws;
+
+        function connect() {
+            ws = new WebSocket(wsUrl);
+
+            ws.onmessage = (ev) => {
+                try {
+                    const msg = JSON.parse(ev.data);
+                    if (msg.type === 'data_changed') {
+                        refreshCurrentSection();
+                        // Also refresh the sidebar net-worth value
+                        fetch('/api/dashboard/summary').then(r => r.json()).then(s => {
+                            document.getElementById('nav-net-worth').textContent = formatCurrency(s.net_worth);
+                        }).catch(() => {});
+                    }
+                } catch (e) {}
+            };
+
+            ws.onclose = () => {
+                // Reconnect after 5 s
+                if (_wsReconnectTimer) clearTimeout(_wsReconnectTimer);
+                _wsReconnectTimer = setTimeout(connect, 5000);
+            };
+
+            ws.onerror = () => ws.close();
+
+            // Send a ping every 30 s to keep the connection alive
+            const pingInterval = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+                else clearInterval(pingInterval);
+            }, 30000);
+        }
+
+        connect();
     }
 
     init();
@@ -895,7 +985,7 @@
         if (sec === 'dashboard') loadDashboard();
         else if (sec === 'transactions') loadTransactions();
         else if (sec === 'accounts') loadAccounts();
-        else if (sec === 'investments') loadInvestments();
+        else if (sec === 'investments') { loadPortfolioSummary(); loadInvestments(); }
         else if (sec === 'audit') loadAuditLog();
     }
 
@@ -1060,25 +1150,103 @@
         } catch (e) {}
     }
 
-    async function loadInvestments() {
+    async function loadPortfolioSummary() {
+        const tbody = document.getElementById('portfolio-table');
+        tbody.innerHTML = `<tr><td colspan="9" style="color:var(--text-muted);text-align:center;padding:16px;">loading...</td></tr>`;
         try {
-            const data = await fetch('/api/dashboard/holdings').then(r => r.json());
-            const tbody = document.getElementById('holdings-table');
-            if (!data.length) {
-                tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:24px;">no holdings</td></tr>`;
+            const data = await fetch('/api/dashboard/portfolio-summary').then(r => r.json());
+            const open = (data.positions || []).filter(p => p.status === 'open');
+            if (!open.length) {
+                tbody.innerHTML = `<tr><td colspan="9" style="color:var(--text-muted);text-align:center;padding:16px;">no open positions</td></tr>`;
                 return;
             }
-            tbody.innerHTML = data.map(h => `
-                <tr>
-                    <td class="td-green" style="font-weight:700;">${escapeHtml(h.symbol)}</td>
-                    <td class="td-dim">${escapeHtml(h.name || '-')}</td>
-                    <td class="right">${h.quantity}</td>
-                    <td class="right td-dim">${formatCurrency(h.average_cost)}</td>
-                    <td class="right">${h.current_price ? formatCurrency(h.current_price) : '-'}</td>
-                    <td class="right td-amber" style="font-weight:700;">${formatCurrency(h.market_value)}</td>
-                </tr>
-            `).join('');
-        } catch (e) {}
+            tbody.innerHTML = open.map(pos => {
+                const pnlClass = pos.unrealized_pnl === null ? '' : pos.unrealized_pnl >= 0 ? 'td-green' : 'td-red';
+                const pnlPct = pos.unrealized_pnl_pct !== null ? (pos.unrealized_pnl_pct >= 0 ? '+' : '') + pos.unrealized_pnl_pct.toFixed(2) + '%' : '-';
+                return `<tr>
+                    <td class="td-green" style="font-weight:700;">${escapeHtml(pos.ticker)}</td>
+                    <td class="right td-dim">${parseFloat(pos.net_units).toFixed(6).replace(/\.?0+$/, '')}</td>
+                    <td class="right td-dim">${pos.avg_cost_per_unit !== null ? formatCurrency(pos.avg_cost_per_unit) : '-'}</td>
+                    <td class="right td-dim">${formatCurrency(pos.cost_basis)}</td>
+                    <td class="right td-amber">${pos.current_price !== null ? formatCurrency(pos.current_price) : '<span style="color:var(--text-muted)">n/a</span>'}</td>
+                    <td class="right" style="font-weight:700;">${formatCurrency(pos.market_value)}</td>
+                    <td class="right ${pnlClass}">${pos.unrealized_pnl !== null ? formatCurrency(pos.unrealized_pnl) : '-'}</td>
+                    <td class="right ${pnlClass}" style="font-weight:700;">${pnlPct}</td>
+                    <td class="td-dim" style="font-size:10px;">${pos.last_price_update ? pos.last_price_update.split('T')[0] : '-'}</td>
+                </tr>`;
+            }).join('');
+            // Summary row
+            const s = data.summary;
+            const totPnlClass = s.total_unrealized_pnl >= 0 ? 'td-green' : 'td-red';
+            tbody.innerHTML += `<tr style="border-top:1px solid var(--border2); font-weight:700;">
+                <td colspan="5" style="text-align:right; color:var(--text-muted); font-size:11px; padding-top:8px;">TOTAL</td>
+                <td class="right" style="padding-top:8px;">${formatCurrency(s.total_market_value)}</td>
+                <td class="right ${totPnlClass}" style="padding-top:8px;">${formatCurrency(s.total_unrealized_pnl)}</td>
+                <td class="right ${totPnlClass}" style="padding-top:8px;">${(s.total_unrealized_pnl_pct >= 0 ? '+' : '') + s.total_unrealized_pnl_pct.toFixed(2)}%</td>
+                <td></td>
+            </tr>`;
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="9" style="color:var(--red);text-align:center;padding:16px;">error loading portfolio</td></tr>`;
+        }
+    }
+
+    async function updatePrices() {
+        const btn = document.getElementById('update-prices-btn');
+        if (btn) btn.textContent = '[updating...]';
+        try {
+            const resp = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({messages: [{role: 'user', content: 'update all asset prices from yfinance'}], stream: false})
+            });
+            await resp.json();
+            await loadPortfolioSummary();
+            await loadSummary();
+        } catch (e) {
+            console.error('Price update failed', e);
+        } finally {
+            if (btn) btn.textContent = '[update prices]';
+        }
+    }
+
+    async function loadInvestments() {
+        const ticker = (document.getElementById('filter-inv-ticker')?.value || '').trim();
+        const tradeType = document.getElementById('filter-inv-type')?.value || '';
+        const start = document.getElementById('filter-inv-start')?.value || '';
+        const end = document.getElementById('filter-inv-end')?.value || '';
+
+        let url = '/api/dashboard/investments?limit=200';
+        if (ticker) url += `&ticker=${encodeURIComponent(ticker.toUpperCase())}`;
+        if (tradeType) url += `&trade_type=${tradeType}`;
+        if (start) url += `&start_date=${start}`;
+        if (end) url += `&end_date=${end}`;
+
+        const tbody = document.getElementById('investments-table');
+        tbody.innerHTML = `<tr><td colspan="9" style="color:var(--text-muted);text-align:center;padding:24px;">loading...</td></tr>`;
+
+        try {
+            const data = await fetch(url).then(r => r.json());
+            if (!data.investments || data.investments.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" style="color:var(--text-muted);text-align:center;padding:24px;">no investment trades found</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = data.investments.map(inv => {
+                const typeClass = inv.trade_type === 'buy' ? 'badge-income' : 'badge-expense';
+                return `<tr>
+                    <td class="td-dim">${inv.date.split('T')[0]}</td>
+                    <td><span class="badge ${typeClass}">${inv.trade_type}</span></td>
+                    <td class="td-green" style="font-weight:700;">${escapeHtml(inv.ticker)}</td>
+                    <td class="right">${parseFloat(inv.units).toFixed(6).replace(/\.?0+$/, '')}</td>
+                    <td class="right td-dim">${formatCurrency(inv.price_per_unit)}</td>
+                    <td class="right td-dim">${inv.fees > 0 ? formatCurrency(inv.fees) : '-'}</td>
+                    <td class="right td-amber" style="font-weight:700;">${formatCurrency(inv.total_amount)}</td>
+                    <td class="td-dim">${escapeHtml(inv.payment_method_name || '-')}</td>
+                    <td class="td-dim">${escapeHtml(inv.broker || '-')}</td>
+                </tr>`;
+            }).join('');
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="9" style="color:var(--red);text-align:center;padding:24px;">error loading investments</td></tr>`;
+        }
     }
 
     async function loadAuditLog() {

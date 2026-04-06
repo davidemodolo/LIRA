@@ -26,7 +26,7 @@ LIRA/
 │   ├── __init__.py        # Package init with version
 │   ├── core/              # Agentic loop, config, exceptions, LLM logic
 │   │   ├── agent.py       # ReAct loop implementation
-│   │   ├── config.py      # App configuration
+│   │   ├── config.py      # App configuration (incl. LIRA_API_URL)
 │   │   ├── exceptions.py  # Custom exceptions
 │   │   └── llm.py         # LLM interaction layer
 │   ├── db/                # Database layer
@@ -37,9 +37,13 @@ LIRA/
 │   │   ├── server.py      # MCP server implementation
 │   │   └── tools.py       # MCP tool implementations
 │   ├── api/               # FastAPI endpoints
-│   │   └── main.py        # App entry point
+│   │   ├── main.py        # App entry point + WebSocket /ws
+│   │   ├── ws.py          # WebSocket connection manager
+│   │   └── routes/
+│   │       ├── dashboard.py  # Dashboard REST routes (incl. /investments)
+│   │       └── plots.py
 │   ├── cli/               # CLI interface
-│   │   └── console.py     # Rich console app
+│   │   └── console.py     # Rich/Textual TUI (local + remote mode)
 │   └── web/               # Web UI templates
 ├── tests/                 # Test suite
 ├── docs/                  # Documentation
@@ -55,8 +59,13 @@ uv sync
 # Run development server
 uv run fastapi dev src/lira/api/main.py
 
-# Run CLI
-uv run lira
+# Run CLI (local agent)
+uv run lira --interactive
+
+# Run CLI in remote mode (connects to a running server)
+uv run lira --interactive --server http://homeserver:8000
+# or via env var:
+LIRA_API_URL=http://homeserver:8000 uv run lira --interactive
 
 # Run tests
 uv run pytest -v
@@ -89,14 +98,44 @@ The project is in active development. The following modules have been implemente
 - [x] MCP server, core tools, and prompt implementations
 - [x] Basic CLI console app
 - [x] API framework integration
+- [x] HITL diff engine for mutations
+- [x] Web dashboard with real-time WebSocket updates
+- [x] Investment tracking (buy/sell trade records)
+- [x] CLI remote mode (connects to a running server via HTTP)
 
 ## Active Development
 
 See the project board or issues for current tasks. Key areas for development:
 
-1. Add HITL diff engine for mutations
-2. Create web dashboard templates
-3. Expand investment tracking intelligence
+1. Expand investment tracking (portfolio aggregation, P&L)
+2. Recurring transactions / cron scheduler
+3. CSV import / ETL pipeline
+
+## Key Data Models
+
+### Transaction
+All fields are mandatory: `account_id`, `amount`, `transaction_type`, `description`,
+`merchant`, `category_id`, `secondary_category_id`, `payment_method_id`, `date`.
+
+### Investment
+Fields: `date`, `ticker`, `units`, `price_per_unit`, `fees` (default 0),
+`trade_type` (buy/sell), `payment_method_id` (optional), `account_id` (optional),
+`currency`, `broker`, `exchange`, `notes`.  
+Computed: `total_amount = units × price_per_unit + fees`.
+
+## Remote / Container Deployment
+
+L.I.R.A. is designed to run as a container on a home server, accessible via Tailscale
+or the local network. Configure the CLI to point at the server:
+
+```bash
+# .env on the client machine
+LIRA_API_URL=http://homeserver:8000
+```
+
+The dashboard (`/dashboard`) connects to `ws://server/ws` for real-time updates —
+any transaction or investment added from the CLI (remote mode) immediately refreshes
+the dashboard without a page reload.
 
 ## Important Notes
 

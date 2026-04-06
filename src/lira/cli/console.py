@@ -26,6 +26,8 @@ from lira.version import __version__
 if TYPE_CHECKING:
     from lira.core.agent import Agent
 
+_REMOTE_API_URL: str | None = None  # set by --server CLI option or LIRA_API_URL env
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -148,8 +150,9 @@ class LIRAApp(App):
     }
     """
 
-    def __init__(self) -> None:
+    def __init__(self, api_url: str | None = None) -> None:
         super().__init__()
+        self.api_url: str | None = api_url or _REMOTE_API_URL
         self.agent: Agent | None = None
         self.show_trace = False
         self.last_trace: list[str] = []
@@ -174,6 +177,10 @@ class LIRAApp(App):
         self.run_agent_warmup()
 
     def init_agent(self) -> None:
+        if self.api_url:
+            # Remote mode: no local agent or DB needed
+            return
+
         from lira.core.agent import Agent, AgentConfig
         from lira.db.session import init_database
 
@@ -187,6 +194,19 @@ class LIRAApp(App):
 
     def run_agent_warmup(self) -> None:
         history = self.query_one("#history", MessageHistory)
+
+        if self.api_url:
+            history.add_system_message(
+                f"[dim]Remote mode — connected to [cyan]{self.api_url}[/cyan][/dim]"
+            )
+            history.add_system_message("\n[green]Interactive mode started.[/green]")
+            history.add_system_message(
+                "[dim]Commands: /trace, /show-trace, /reset, /help, /clear[/dim]"
+            )
+            input_widget = self.query_one("#command-input", Input)
+            input_widget.focus()
+            return
+
         history.add_system_message("[dim]Loading model for interactive session...[/dim]")
 
         async def warmup() -> None:
@@ -411,8 +431,6 @@ class LIRAApp(App):
         trace_lines: list[str],
     ) -> None:
         """Show a Rich diff table for pending mutations and prompt for confirmation."""
-        from rich.table import Table
-        from rich.console import Console as RichConsole
 
         history.add_system_message("[bold yellow]─── Proposed Changes ─────────────────────────────────────────[/bold yellow]")
 
@@ -458,13 +476,37 @@ class LIRAApp(App):
 
     async def _execute_confirmed_mutations(self, history: MessageHistory) -> None:
         """Execute HITL-confirmed pending tool calls."""
-        if not self._pending_hitl_calls or self.agent is None:
+        if not self._pending_hitl_calls:
             history.add_system_message("[yellow]No pending changes to apply.[/yellow]")
             return
 
         calls = self._pending_hitl_calls
         self._pending_hitl_calls = []
         self._pending_hitl_trace = []
+
+        # Remote mode: delegate execution to the server
+        if self.api_url:
+            try:
+                import httpx
+
+                url = self.api_url.rstrip("/") + "/api/chat/confirm"
+                async with httpx.AsyncClient(timeout=120) as client:
+                    resp = await client.post(
+                        url,
+                        json={"pending_tool_calls": calls, "stream": False},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    msg = data.get("message", {}).get("content", "")
+                    if msg:
+                        history.add_lira_message(msg)
+            except Exception as e:
+                history.add_error(f"Error executing confirmed changes: {e}")
+            return
+
+        if self.agent is None:
+            history.add_system_message("[yellow]No pending changes to apply.[/yellow]")
+            return
 
         try:
             async for event in self.agent.run_confirmed(calls):
@@ -485,6 +527,11 @@ class LIRAApp(App):
         query: str,
         event_handler: Any = None,
     ) -> dict[str, Any]:
+        # ── Remote mode: stream from the server API ──────────────────────────
+        if self.api_url:
+            return await self._process_query_remote(query, event_handler)
+
+        # ── Local mode ────────────────────────────────────────────────────────
         if self.agent is None:
             return {
                 "message": "Agent not initialized.",
@@ -539,9 +586,112 @@ class LIRAApp(App):
             "pending_tool_calls": final_response.pending_tool_calls,
         }
 
+    async def _process_query_remote(
+        self,
+        query: str,
+        event_handler: Any = None,
+    ) -> dict[str, Any]:
+        """Send query to the remote L.I.R.A. API and stream back events."""
+        import httpx
 
-def run_interactive() -> None:
-    app_instance = LIRAApp()
+        base_url = self.api_url.rstrip("/")  # type: ignore[union-attr]
+        url = base_url + "/api/chat"
+
+        # Build chat history for the server
+        history_msgs = [
+            {"role": "user", "content": query}
+        ]
+
+        trace_lines: list[str] = []
+        draft_chunks: list[str] = []
+        pending_tool_calls: list[dict[str, Any]] | None = None
+        final_message = ""
+        final_state = "complete"
+
+        try:
+            async with httpx.AsyncClient(timeout=300) as client, client.stream(
+                "POST",
+                url,
+                json={"messages": history_msgs, "stream": True},
+                headers={"Content-Type": "application/json"},
+            ) as response:
+                response.raise_for_status()
+                line_buffer = ""
+                async for chunk in response.aiter_text():
+                    line_buffer += chunk
+                    lines = line_buffer.split("\n")
+                    line_buffer = lines.pop()
+                    for line in lines:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            ev = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+
+                        kind = ev.get("kind", "")
+                        content = ev.get("content", "")
+                        payload = ev.get("payload", {}) or {}
+
+                        # Build a minimal event-like object for the handler
+                        class _Ev:
+                            pass
+
+                        fake_ev = _Ev()
+                        fake_ev.kind = kind  # type: ignore[attr-defined]
+                        fake_ev.content = content  # type: ignore[attr-defined]
+                        fake_ev.payload = payload  # type: ignore[attr-defined]
+
+                        if event_handler:
+                            event_handler(fake_ev)
+
+                        if kind == "llm_token" and content:
+                            draft_chunks.append(content)
+                        elif kind == "tool_call":
+                            trace_lines.append(self._format_tool_call(payload))
+                        elif kind == "tool_result":
+                            trace_lines.append(self._format_tool_result(payload))
+                        elif kind == "status" and content:
+                            trace_lines.append(f"state> {content}")
+                        elif kind == "final":
+                            resp = payload.get("response") or {}
+                            final_message = resp.get("message", "".join(draft_chunks))
+                            final_state = resp.get("state", "complete")
+                            pending_tool_calls = resp.get("pending_tool_calls")
+                        elif kind == "mutation_preview":
+                            pending_tool_calls = (payload or {}).get("pending_calls")
+                            final_state = "waiting_input"
+
+        except Exception as e:
+            return {
+                "message": "",
+                "state": "error",
+                "iterations": 0,
+                "data": None,
+                "error": str(e),
+                "trace": trace_lines,
+                "draft": "".join(draft_chunks),
+                "pending_tool_calls": None,
+            }
+
+        if not final_message:
+            final_message = "".join(draft_chunks)
+
+        return {
+            "message": final_message,
+            "state": final_state,
+            "iterations": 0,
+            "data": None,
+            "error": None,
+            "trace": trace_lines,
+            "draft": "".join(draft_chunks),
+            "pending_tool_calls": pending_tool_calls,
+        }
+
+
+def run_interactive(api_url: str | None = None) -> None:
+    app_instance = LIRAApp(api_url=api_url)
     app_instance.run()
 
 
@@ -549,17 +699,35 @@ def run_interactive() -> None:
 def main(
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Start interactive mode"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug mode"),
+    server: str | None = typer.Option(
+        None,
+        "--server",
+        "-s",
+        help=(
+            "L.I.R.A. server URL (e.g. http://homeserver:8000). "
+            "Overrides LIRA_API_URL env var. "
+            "When set, the CLI forwards all requests to the remote server."
+        ),
+    ),
 ) -> None:
     """L.I.R.A. CLI - AI-native personal finance tracker."""
     from rich.console import Console
+
+    from lira.core.config import settings
 
     console = Console()
 
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    # Resolve server URL: CLI flag > env var in config
+    api_url = server or settings.api_url
+
+    global _REMOTE_API_URL
+    _REMOTE_API_URL = api_url
+
     if interactive:
-        run_interactive()
+        run_interactive(api_url=api_url)
         raise typer.Exit()
 
     console.print(
@@ -570,7 +738,10 @@ def main(
             border_style="cyan",
         )
     )
+    if api_url:
+        console.print(f"[dim]Remote mode: connected to [cyan]{api_url}[/cyan][/dim]")
     console.print("[dim]Use --interactive or -i to start chat mode[/dim]")
+    console.print("[dim]Use --server URL to connect to a remote L.I.R.A. server[/dim]")
     console.print("[dim]Use --help for available commands[/dim]")
 
 

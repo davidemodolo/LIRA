@@ -13,14 +13,61 @@ investment tracker. It uses an MCP (Model Context Protocol) architecture with a 
 
 ```
 src/lira/
-├── core/          # Agentic loop, config, exceptions, LLM logic
-├── db/            # SQLAlchemy models, session management
+├── core/          # Agentic loop, config (LIRA_API_URL), exceptions, LLM logic
+├── db/            # SQLAlchemy models (incl. Investment), session management
 ├── mcp/           # MCP server, prompts, and tool implementations
-├── api/           # FastAPI REST endpoints
-├── cli/           # Rich-based terminal interface
-├── web/           # Web dashboard (templates)
+├── api/           # FastAPI REST endpoints + WebSocket /ws
+│   ├── ws.py      # WebSocket connection manager (real-time push)
+│   └── routes/    # dashboard routes (incl. /investments)
+├── cli/           # Textual TUI — local agent or remote HTTP mode
+├── web/           # Web dashboard (templates + WS client)
 └── version.py     # Version information
 ```
+
+## Key Models
+
+### Investment (new)
+Trade-level record for buy/sell operations:
+- `date`, `ticker`, `units`, `price_per_unit`, `fees`, `trade_type` (buy/sell)
+- `payment_method_id` (FK, optional), `account_id` (FK, optional)
+- `currency`, `broker`, `exchange`, `notes`
+- Computed property: `total_amount = units × price_per_unit + fees`
+
+### Transaction (updated)
+`create_transaction` now accepts an optional `date` parameter (ISO format).
+All core fields are mandatory.
+
+## MCP Tools (current)
+
+| Tool | Description |
+|------|-------------|
+| `create_transaction` | Log an expense/income. Accepts optional `date`. |
+| `get_transactions` | Query transactions with filters. |
+| `create_investment` | Record a buy/sell trade. |
+| `get_investments` | Query investment trades with filters. |
+| `create_account` / `list_accounts` | Account management. |
+| `create_payment_method` / `get_payment_methods` | Payment methods. |
+| `create_category` / `get_categories` | Category management. |
+| `fetch_stock` | Real-time stock quotes via yfinance. |
+| `generate_plot` | Generate matplotlib chart (base64 PNG). |
+| `execute_sql` | Read-only SQL SELECT queries. |
+| `set_currency` | Set base currency. |
+| `update_payment_method_balance` | Manual balance correction. |
+| `transfer_between_payment_methods` | Move funds between methods. |
+| `record_gain_loss` | Record gain/loss on a payment method. |
+| `create_persistent_plot` | Persist a plot to the dashboard. |
+
+## Real-time Dashboard
+
+The dashboard connects to `ws://<host>/ws`. After any agent tool call completes
+(via the `/api/chat` endpoint), the server broadcasts `{"type": "data_changed"}` to
+all connected clients, which then call `refreshCurrentSection()` automatically.
+
+## CLI Remote Mode
+
+Set `LIRA_API_URL` env var or use `--server URL` flag. The TUI then forwards all
+messages to the remote server's `/api/chat` endpoint (streaming) instead of running
+a local agent. HITL confirmations are forwarded to `/api/chat/confirm`.
 
 ## Key Design Principles
 
