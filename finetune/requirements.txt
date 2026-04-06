@@ -1,0 +1,8 @@
+# Install PyTorch CUDA wheels separately; see README.md.
+transformers>=4.51.0
+trl>=0.12.0
+peft>=0.13.0
+datasets>=3.0.0
+accelerate>=1.0.0
+bitsandbytes>=0.44.0
+pyyaml>=6.0.0

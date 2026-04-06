@@ -1,0 +1,349 @@
+# Seed examples for FunctionGemma finetuning on LIRA tools.
+#
+# Each example maps a natural-language user query to one or more tool calls.
+# The generate_dataset.py script uses these + the extracted tool schemas
+# to build the final training dataset.
+#
+# Format:
+#   - query: "user message"
+#     calls:
+#       - name: tool_name
+#         arguments: { key: value, ... }
+#     tags: [single, read]  # optional, for filtering/balancing
+#
+# To add more examples after adding new MCP tools, just append entries here
+# and re-run: uv run python -m finetune.generate_dataset
+
+# === Account queries ===
+- query: "Show me all my accounts"
+  calls:
+    - name: list_accounts
+      arguments: { active_only: true }
+  tags: [single, read]
+
+- query: "List all accounts including closed ones"
+  calls:
+    - name: list_accounts
+      arguments: { active_only: false }
+  tags: [single, read]
+
+# === Account creation ===
+- query: "Create a new savings account called Emergency Fund with 5000 euros"
+  calls:
+    - name: create_account
+      arguments: { name: "Emergency Fund", account_type: "savings", balance: 5000.0 }
+  tags: [single, mutation]
+
+- query: "Add a checking account named Main Checking"
+  calls:
+    - name: create_account
+      arguments: { name: "Main Checking", account_type: "checking", balance: 0.0 }
+  tags: [single, mutation]
+
+# === Transaction creation ===
+- query: "I spent 45.50 at Lidl for groceries today, paid with debit card"
+  calls:
+    - name: create_transaction
+      arguments:
+        account_id: 1
+        amount: 45.50
+        transaction_type: "expense"
+        description: "Grocery shopping"
+        merchant: "Lidl"
+        category_name: "FOOD > groceries"
+        secondary_category_name: "groceries"
+        payment_method_name: "Debit Card"
+  tags: [single, mutation]
+
+- query: "Got my salary of 3200 euros deposited today"
+  calls:
+    - name: create_transaction
+      arguments:
+        account_id: 1
+        amount: 3200.0
+        transaction_type: "income"
+        description: "Monthly salary"
+        merchant: "Employer"
+        category_name: "WORK > workservices"
+        secondary_category_name: "workservices"
+        payment_method_name: "Bank Transfer"
+  tags: [single, mutation]
+
+- query: "Paid 120 euros for the gym membership, charged to my credit card"
+  calls:
+    - name: create_transaction
+      arguments:
+        account_id: 1
+        amount: 120.0
+        transaction_type: "expense"
+        description: "Gym membership"
+        merchant: "FitLife Gym"
+        category_name: "HEALTH > sport"
+        secondary_category_name: "sport"
+        payment_method_name: "Credit Card"
+  tags: [single, mutation]
+
+# === Transaction queries ===
+- query: "Show me my expenses from last month"
+  calls:
+    - name: get_transactions
+      arguments:
+        transaction_type: "expense"
+        start_date: "2026-03-01"
+        end_date: "2026-03-31"
+  tags: [single, read]
+
+- query: "What did I spend at restaurants this year?"
+  calls:
+    - name: get_transactions
+      arguments:
+        category: "bar-restaurant"
+        start_date: "2026-01-01"
+  tags: [single, read]
+
+# === Categories ===
+- query: "Show me all the categories"
+  calls:
+    - name: get_categories
+      arguments: {}
+  tags: [single, read]
+
+- query: "Create a new subcategory called streaming under MISC."
+  calls:
+    - name: create_category
+      arguments: { name: "streaming", parent_id: 6 }
+  tags: [single, mutation]
+
+# === Payment methods ===
+- query: "What payment methods do I have?"
+  calls:
+    - name: get_payment_methods
+      arguments: {}
+  tags: [single, read]
+
+- query: "Show me the balances on all my payment methods"
+  calls:
+    - name: get_payment_method_balances
+      arguments: {}
+  tags: [single, read]
+
+- query: "Create a new payment method called PayPal with 150 euros"
+  calls:
+    - name: create_payment_method
+      arguments: { name: "PayPal", balance: 150.0 }
+  tags: [single, mutation]
+
+- query: "Update my Cash balance to 200 euros"
+  calls:
+    - name: update_payment_method_balance
+      arguments: { payment_method_name: "Cash", new_balance: 200.0 }
+  tags: [single, mutation]
+
+- query: "Transfer 50 euros from Cash to Debit Card"
+  calls:
+    - name: transfer_between_payment_methods
+      arguments: { from_method: "Cash", to_method: "Debit Card", amount: 50.0 }
+  tags: [single, mutation]
+
+# === Investments ===
+- query: "I bought 10 shares of AAPL at 185.50 through Interactive Brokers"
+  calls:
+    - name: create_investment
+      arguments:
+        date: "2026-04-06"
+        ticker: "AAPL"
+        units: 10.0
+        price_per_unit: 185.50
+        trade_type: "buy"
+        broker: "Interactive Brokers"
+        currency: "USD"
+  tags: [single, mutation]
+
+- query: "Sold 5 shares of MSFT at 420 with 2.50 in fees"
+  calls:
+    - name: create_investment
+      arguments:
+        date: "2026-04-06"
+        ticker: "MSFT"
+        units: 5.0
+        price_per_unit: 420.0
+        fees: 2.50
+        trade_type: "sell"
+        currency: "USD"
+  tags: [single, mutation]
+
+- query: "Show me all my investments"
+  calls:
+    - name: get_investments
+      arguments: {}
+  tags: [single, read]
+
+- query: "Show my portfolio summary"
+  calls:
+    - name: get_portfolio_summary
+      arguments: {}
+  tags: [single, read]
+
+- query: "What's the current price of Tesla stock?"
+  calls:
+    - name: fetch_stock
+      arguments: { symbol: "TSLA" }
+  tags: [single, read]
+
+- query: "Show me NVIDIA stock price with 3 month history"
+  calls:
+    - name: fetch_stock
+      arguments: { symbol: "NVDA", include_history: true, period: "3mo" }
+  tags: [single, read]
+
+# === Multi-tool calls ===
+- query: "I want to see my accounts and my recent transactions"
+  calls:
+    - name: list_accounts
+      arguments: { active_only: true }
+    - name: get_transactions
+      arguments: { limit: 20 }
+  tags: [multi, read]
+
+- query: "Show me my portfolio and the current price of AAPL and MSFT"
+  calls:
+    - name: get_portfolio_summary
+      arguments: {}
+    - name: fetch_stock
+      arguments: { symbol: "AAPL" }
+    - name: fetch_stock
+      arguments: { symbol: "MSFT" }
+  tags: [multi, read]
+
+- query: "What are my payment methods and categories?"
+  calls:
+    - name: get_payment_methods
+      arguments: {}
+    - name: get_categories
+      arguments: {}
+  tags: [multi, read]
+
+- query: "Check the price of VTI and show me my investment history for it"
+  calls:
+    - name: fetch_stock
+      arguments: { symbol: "VTI" }
+    - name: get_investments
+      arguments: { ticker: "VTI" }
+  tags: [multi, read]
+
+- query: "Create an account called Crypto Wallet and a payment method called Coinbase with 500"
+  calls:
+    - name: create_account
+      arguments: { name: "Crypto Wallet", account_type: "checking", balance: 0.0 }
+    - name: create_payment_method
+      arguments: { name: "Coinbase", balance: 500.0 }
+  tags: [multi, mutation]
+
+# === SQL queries ===
+- query: "How much did I spend in total last month?"
+  calls:
+    - name: execute_sql
+      arguments:
+        query: "SELECT SUM(amount) as total FROM transactions WHERE transaction_type = 'expense' AND date >= '2026-03-01' AND date < '2026-04-01'"
+  tags: [single, read, sql]
+
+- query: "Show me spending by category this year"
+  calls:
+    - name: execute_sql
+      arguments:
+        query: "SELECT c.name as category, SUM(t.amount) as total FROM transactions t JOIN categories c ON t.category_id = c.id WHERE t.transaction_type = 'expense' AND t.date >= '2026-01-01' GROUP BY c.name ORDER BY total DESC"
+  tags: [single, read, sql]
+
+# === Plots ===
+- query: "Make a bar chart of my spending by category"
+  calls:
+    - name: get_categories
+      arguments: {}
+    - name: execute_sql
+      arguments:
+        query: "SELECT c.name as x, SUM(t.amount) as y FROM transactions t JOIN categories c ON t.category_id = c.id WHERE t.transaction_type = 'expense' GROUP BY c.name ORDER BY y DESC"
+  tags: [multi, read, plot_prep]
+
+- query: "Generate a line chart called Cash Flow with monthly values"
+  calls:
+    - name: generate_plot
+      arguments:
+        plot_type: "line"
+        title: "Cash Flow"
+        data:
+          - { x: "Jan", y: 1800.0 }
+          - { x: "Feb", y: 1650.0 }
+          - { x: "Mar", y: 2100.0 }
+  tags: [single, read, plot]
+
+- query: "Add a persistent dashboard plot named Top Categories"
+  calls:
+    - name: create_persistent_plot
+      arguments:
+        name: "Top Categories"
+        plot_type: "bar"
+        title: "Spending by Category"
+        x_key: "x"
+        y_key: "y"
+  tags: [single, mutation, plot]
+
+# === Asset prices ===
+- query: "Update the price of AAPL to 190.25"
+  calls:
+    - name: set_asset_price
+      arguments: { ticker: "AAPL", price: 190.25, currency: "USD" }
+  tags: [single, mutation]
+
+- query: "Refresh all asset prices from the market"
+  calls:
+    - name: update_asset_prices
+      arguments: {}
+  tags: [single, mutation]
+
+# === Gain/loss ===
+- query: "Record a gain of 150 on my Cash payment method"
+  calls:
+    - name: record_gain_loss
+      arguments: { payment_method_name: "Cash", amount: 150.0 }
+  tags: [single, mutation]
+
+# === Currency and portfolio analytics ===
+- query: "Set my base currency to EUR"
+  calls:
+    - name: set_currency
+      arguments: { currency: "EUR" }
+  tags: [single, mutation]
+
+- query: "Show me my portfolio details including performance"
+  calls:
+    - name: get_portfolio
+      arguments: { include_performance: true }
+  tags: [single, read]
+
+- query: "Estimate capital gains tax for this sale"
+  calls:
+    - name: calculate_tax
+      arguments:
+        sales:
+          - symbol: "AAPL"
+            quantity: 10
+            proceeds: 2300.0
+            cost_basis: 1800.0
+            purchase_date: "2024-01-10"
+            sale_date: "2026-04-01"
+        tax_rate_short: 0.35
+        tax_rate_long: 0.15
+        holding_period_days: 365
+  tags: [single, read]
+
+# === Bulk updates ===
+- query: "Change all grocery transactions from March to FOOD > groceries"
+  calls:
+    - name: update_transactions
+      arguments:
+        description_pattern: "grocery"
+        start_date: "2026-03-01"
+        end_date: "2026-03-31"
+        category_name: "FOOD > groceries"
+        dry_run: true
+  tags: [single, mutation]
