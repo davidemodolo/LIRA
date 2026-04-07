@@ -66,16 +66,20 @@ def augment_examples_with_ollama(
     model: str,
     host: str,
     generate_missing: bool = True,
+    paraphrase_variants: int = 8,
+    synthetic_per_tool: int = 6,
 ) -> list[dict[str, Any]]:
     print(f"  Augmenting with Ollama ({model} @ {host})...")
     augmented = list(examples)
     total = len(examples)
 
-    print(f"  Paraphrasing {total} seed examples (2 variants each)...")
+    print(
+        f"  Paraphrasing {total} seed examples ({paraphrase_variants} variants each)..."
+    )
     for i, ex in enumerate(examples, start=1):
         print(f"    [{i}/{total}] {ex['query'][:70]}", end="", flush=True)
         prompt = f"""
-Rephrase the following user query in 2 different realistic ways.
+Rephrase the following user query in {paraphrase_variants} different realistic ways.
 The output MUST be a JSON object with a single key "phrases" containing a list of strings.
 
 Original Query: "{ex['query']}"
@@ -84,7 +88,8 @@ Example format:
 {{
   "phrases": [
     "I need to query X",
-    "Show me X"
+    "Show me X",
+    "Please provide X"
   ]
 }}
 """
@@ -121,11 +126,13 @@ Example format:
         unused = set(all_tools.keys()) - used_tools
 
         if unused:
-            print(f"\n  Generating synthetic examples for {len(unused)} uncovered tools...")
+            print(
+                f"\n  Generating synthetic examples for {len(unused)} uncovered tools..."
+            )
             for j, tool_name in enumerate(sorted(unused), start=1):
                 print(f"    [{j}/{len(unused)}] {tool_name}...", end="", flush=True)
                 new_exs = generate_ollama_examples_for_tool(
-                    all_tools[tool_name], model, host, count=3
+                    all_tools[tool_name], model, host, count=synthetic_per_tool
                 )
                 augmented.extend(new_exs)
                 print(f" → +{len(new_exs)} examples")

@@ -185,12 +185,12 @@ class LIRAApp(App):
             # Remote mode: no local agent or DB needed
             return
 
-        from lira.core.agent import Agent, AgentConfig
+        from lira.core.agent import AgentConfig, get_agent
         from lira.db.session import init_database
 
         init_database()
 
-        self.agent = Agent(
+        self.agent = get_agent(
             config=AgentConfig(
                 enable_self_correction=True,
             )

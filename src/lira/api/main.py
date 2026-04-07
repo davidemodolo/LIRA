@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from lira.core.agent import Agent, AgentConfig, AgentState
+from lira.core.agent import AgentConfig, AgentState, get_agent
 from lira.db.session import DatabaseSession, init_database
 from lira.version import __version__
 
@@ -155,7 +155,7 @@ async def chat_with_agent(request: AgentChatRequest) -> Any:
         if len(request.messages) > 1
         else None
     )
-    agent = Agent(AgentConfig())
+    agent = get_agent(AgentConfig())
 
     try:
         if request.stream:
@@ -228,7 +228,7 @@ async def confirm_mutations(request: ConfirmRequest) -> Any:
     if not request.pending_tool_calls:
         raise HTTPException(status_code=400, detail="No pending tool calls to confirm")
 
-    agent = Agent(AgentConfig())
+    agent = get_agent(AgentConfig())
 
     try:
         if request.stream:

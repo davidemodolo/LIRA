@@ -394,6 +394,7 @@ class Agent:
         self._state = AgentState.IDLE
         self._history: list[dict[str, Any]] = []
         self._tools_schema = self._build_tools_schema()
+        self._tools_list: list[dict[str, Any]] = self._build_tools_list()
         self._init_status = check_initialization_needed()
         self._category_tree = get_category_tree()
         self._currency = get_currency()
@@ -451,6 +452,82 @@ class Agent:
                         tools_desc.append(f"    - {header}")
 
         return "\n".join(tools_desc)
+
+    def _build_context_strings(self) -> tuple[str, str]:
+        """Return (init_context, category_info) strings for system prompts."""
+        init_msgs: list[str] = []
+        if self._init_status["accounts_needed"]:
+            init_msgs.append("A default 'Personal' account will be created automatically")
+        if self._init_status["currency_needed"]:
+            init_msgs.append("Ask the user for their base currency (e.g., USD, EUR, GBP)")
+        if self._init_status["payment_methods_needed"]:
+            init_msgs.append(
+                "Ask the user for their payment methods with their starting balances"
+                " (e.g., 'Cash: 100, Revolut: 500, BBVA: 200')"
+            )
+        if self._init_status["categories_needed"]:
+            init_msgs.append(
+                "Ask the user for their category hierarchy. Prompt with: 'Please provide"
+                " your expense categories. For each main category, list the subcategories."
+                " Example: FOOD (restaurant, groceries), TRANSPORT (gas, bus), etc.'"
+            )
+
+        init_context = ""
+        if init_msgs:
+            init_context = (
+                "\n[SETUP REQUIRED] The first time running, please:\n- "
+                + "\n- ".join(init_msgs)
+                + "\nUse set_currency, create_payment_method (with balance), and"
+                " get_categories tools as needed.\n"
+            )
+
+        category_info = ""
+        if self._category_tree:
+            cat_lines = []
+            for parent, data in self._category_tree.items():
+                subs = [s["name"] for s in data.get("subcategories", [])]
+                if subs:
+                    cat_lines.append(f"  {parent}: {', '.join(subs)}")
+                else:
+                    cat_lines.append(f"  {parent}")
+            category_info = "\n[AVAILABLE CATEGORIES]\n" + "\n".join(cat_lines) + "\n"
+
+        return init_context, category_info
+
+    def _build_tools_list(self) -> list[dict[str, Any]]:
+        """Build raw tools list (JSON schemas) for FunctionGemma chat template."""
+        schemas: list[dict[str, Any]] = []
+        for tool in mcp._local_provider._components.values():
+            if not hasattr(tool, "parameters"):
+                continue
+            raw_params = tool.parameters or {}
+            properties = raw_params.get("properties", {}) if isinstance(raw_params, dict) else {}
+            required = raw_params.get("required", []) if isinstance(raw_params, dict) else []
+
+            clean_props: dict[str, Any] = {}
+            for name, prop in properties.items():
+                if not isinstance(prop, dict):
+                    continue
+                clean: dict[str, Any] = {}
+                for key in ("type", "description", "enum", "default"):
+                    if key in prop:
+                        clean[key] = prop[key]
+                if "anyOf" in prop:
+                    for variant in prop["anyOf"]:
+                        if isinstance(variant, dict) and variant.get("type") != "null":
+                            clean["type"] = variant.get("type", "string")
+                            break
+                clean_props[name] = clean
+
+            schemas.append({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": {"type": "object", "properties": clean_props, "required": required},
+                },
+            })
+        return schemas
 
     async def run(
         self,
@@ -542,43 +619,7 @@ class Agent:
         self._state = AgentState.REASONING
 
         today = datetime.now(timezone.utc).date().isoformat()
-
-        init_msgs: list[str] = []
-        if self._init_status["accounts_needed"]:
-            init_msgs.append(
-                "A default 'Personal' account will be created automatically"
-            )
-        if self._init_status["currency_needed"]:
-            init_msgs.append(
-                "Ask the user for their base currency (e.g., USD, EUR, GBP)"
-            )
-        if self._init_status["payment_methods_needed"]:
-            init_msgs.append(
-                "Ask the user for their payment methods with their starting balances (e.g., 'Cash: 100, Revolut: 500, BBVA: 200')"
-            )
-        if self._init_status["categories_needed"]:
-            init_msgs.append(
-                "Ask the user for their category hierarchy. Prompt with: 'Please provide your expense categories. For each main category, list the subcategories. Example: FOOD (restaurant, groceries), TRANSPORT (gas, bus), etc.'"
-            )
-
-        init_context = ""
-        if init_msgs:
-            init_context = (
-                "\n[SETUP REQUIRED] The first time running, please:\n- "
-                + "\n- ".join(init_msgs)
-                + "\nUse set_currency, create_payment_method (with balance), and get_categories tools as needed.\n"
-            )
-
-        category_info = ""
-        if self._category_tree:
-            cat_lines = []
-            for parent, data in self._category_tree.items():
-                subs = [s["name"] for s in data.get("subcategories", [])]
-                if subs:
-                    cat_lines.append(f"  {parent}: {', '.join(subs)}")
-                else:
-                    cat_lines.append(f"  {parent}")
-            category_info = "\n[AVAILABLE CATEGORIES]\n" + "\n".join(cat_lines) + "\n"
+        init_context, category_info = self._build_context_strings()
 
         system_prompt = f"""You are L.I.R.A., an AI assistant for personal finance management.
 
@@ -1017,3 +1058,19 @@ If no tools needed, respond with plain text."""
         """Reset agent state and history."""
         self._state = AgentState.IDLE
         self._history.clear()
+
+
+def get_agent(config: AgentConfig | None = None) -> Agent:
+    """Return the appropriate agent for the configured LLM provider.
+
+    When LLM_PROVIDER=local, returns a FunctionGemmaAgent that uses the
+    chat template directly for tool calls. Otherwise returns the standard Agent.
+    """
+    from lira.core.config import settings
+
+    if settings.llm_provider == "local":
+        from lira.core.fg_agent import FunctionGemmaAgent
+
+        return FunctionGemmaAgent(config=config)
+
+    return Agent(config=config)

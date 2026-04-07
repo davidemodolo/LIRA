@@ -21,7 +21,6 @@ After training, set in .env:
 
 from __future__ import annotations
 
-import importlib
 import json
 import random
 import sys
@@ -41,19 +40,15 @@ TOOLS_PATH = BASE_DIR / "tools_schema.json"
 DATASET_PATH = BASE_DIR / "dataset.json"
 EXAMPLES_PATH = BASE_DIR / "examples.yaml"
 
-SYSTEM_PROMPT = (
-    "You are L.I.R.A. (LIRA Is Recursive Accounting), a personal finance assistant. "
-    "You help users manage their finances by calling the available tools. "
-    "When the user's request requires multiple pieces of information, call multiple "
-    "tools in parallel. Always use the most specific tool available."
-)
+from lira.core.fg_agent import _SYSTEM_PROMPT as SYSTEM_PROMPT  # noqa: E402
 
 # Hyperparameters from the official Google FunctionGemma finetuning guide
 EPOCHS = 8
-BATCH_SIZE = 4
+BATCH_SIZE = 1              # 1 sample per step to fit 3090 24GB with 8k-token sequences
+GRAD_ACCUM_STEPS = 4        # effective batch size = BATCH_SIZE * GRAD_ACCUM_STEPS = 4
 LEARNING_RATE = 5e-5
 LR_SCHEDULER = "constant"
-MAX_SEQ_LEN = 512
+MAX_SEQ_LEN = 6144          # ~5600 tokens per sample; 6144 leaves headroom, avoids 8192 OOM
 EVAL_RATIO = 0.1
 SEED = 42
 
@@ -130,7 +125,12 @@ def step_build_dataset(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from finetune.ollama_augment import augment_examples_with_ollama
 
     augmented = augment_examples_with_ollama(
-        raw_examples, tools, model=settings.llm_model, host=settings.ollama_base_url
+        raw_examples,
+        tools,
+        model=settings.llm_model,
+        host=settings.ollama_base_url,
+        paraphrase_variants=8,   # rephrases per seed example (was 3)
+        synthetic_per_tool=6,    # generated examples per uncovered tool (was 3)
     )
 
     rng = random.Random(SEED)
@@ -183,6 +183,11 @@ def step_unload_ollama() -> None:
 
 
 def step_train(dataset: list[dict[str, Any]]) -> None:
+    import os
+
+    # Reduce CUDA allocator fragmentation — helps when sequences vary in length
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     print(f"\n[4/5] Training FunctionGemma on {len(dataset)} examples...")
 
     try:
@@ -206,19 +211,34 @@ def step_train(dataset: list[dict[str, Any]]) -> None:
 
     # Load model as recommended in the official Google guide:
     # - dtype="auto" (no forced quantization)
-    # - attn_implementation="eager" (required for Gemma 3)
     # - No LoRA, no 4-bit: full fine-tuning
+    # attn_implementation: "sdpa" uses PyTorch's memory-efficient scaled dot-product
+    # attention (Flash Attention when available on Ampere+ GPUs). The guide recommends
+    # "eager" but that causes OOM at 6144-token sequences on a 3090. If sdpa causes
+    # correctness issues, fall back to "eager" and reduce MAX_SEQ_LEN further.
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
     model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
         dtype="auto",
         device_map="auto",
-        attn_implementation="eager",
+        attn_implementation="sdpa",
     )
+    # Gradient checkpointing recomputes activations on the backward pass instead of
+    # storing them, halving activation memory at the cost of ~33% extra compute.
+    # use_cache must be False otherwise the KV cache conflicts with checkpointing.
+    model.config.use_cache = False
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
-    # Render messages using the FunctionGemma chat template.
-    # The "developer" role MUST be kept — it activates function-calling logic.
-    rendered: list[dict[str, str]] = []
+    # Tokenize and build samples with completion-only labels.
+    # Tokens belonging to the prompt (everything before <start_of_turn>model\n)
+    # are masked to -100 so the loss is only computed on the model's tool-call output.
+    # This prevents the model from learning to echo system prompt / tool declarations.
+    response_template = "<start_of_turn>model\n"
+    response_template_ids = tokenizer.encode(response_template, add_special_tokens=False)
+    rt_len = len(response_template_ids)
+
+    tokenized_samples: list[dict[str, list[int]]] = []
+    skipped = 0
     for idx, entry in enumerate(dataset, start=1):
         text = tokenizer.apply_chat_template(
             entry["messages"],
@@ -228,26 +248,64 @@ def step_train(dataset: list[dict[str, Any]]) -> None:
         )
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"Empty sample at entry #{idx}")
-        rendered.append({"text": text})
 
-    hf_dataset = Dataset.from_list(rendered)
+        enc = tokenizer(
+            text,
+            truncation=True,
+            max_length=MAX_SEQ_LEN,
+            return_tensors=None,
+        )
+        input_ids: list[int] = enc["input_ids"]
+        labels: list[int] = list(input_ids)
+
+        # Find the last occurrence of the response template token sequence
+        # and mask everything before it.
+        found = False
+        for i in range(len(input_ids) - rt_len, -1, -1):
+            if input_ids[i : i + rt_len] == response_template_ids:
+                for j in range(i + rt_len):
+                    labels[j] = -100
+                found = True
+                break
+
+        if not found:
+            # Response template not in (possibly truncated) sample — skip it,
+            # as training on it with full labels would teach prompt-echoing.
+            skipped += 1
+            continue
+
+        tokenized_samples.append({"input_ids": input_ids, "labels": labels})
+
+    if skipped:
+        print(f"  WARNING: {skipped} samples skipped (response template not found, likely truncated)")
+    print(f"  Usable samples after masking: {len(tokenized_samples)}")
+    if not tokenized_samples:
+        raise RuntimeError("No usable training samples — increase MAX_SEQ_LEN or reduce tool count.")
+
+    hf_dataset = Dataset.from_list(tokenized_samples)
     split = hf_dataset.train_test_split(test_size=EVAL_RATIO, seed=SEED) if len(hf_dataset) > 1 else None
     train_ds = split["train"] if split else hf_dataset
     eval_ds = split["test"] if split else None
 
     print(f"  Train: {len(train_ds)}, Eval: {len(eval_ds) if eval_ds else 0}")
 
+    from transformers import DataCollatorForSeq2Seq
+
+    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding=True, label_pad_token_id=-100)
+
     # Training args from the official Google FunctionGemma guide
     use_bf16 = torch.cuda.is_bf16_supported()
     training_args = SFTConfig(
         output_dir=str(OUTPUT_DIR),
-        dataset_text_field="text",
+        dataset_text_field=None,  # we pass pre-tokenized data
         max_length=MAX_SEQ_LEN,
         packing=False,
         num_train_epochs=EPOCHS,
         per_device_train_batch_size=BATCH_SIZE,
         per_device_eval_batch_size=BATCH_SIZE,
-        gradient_checkpointing=False,  # incompatible with caching in Gemma 3
+        gradient_accumulation_steps=GRAD_ACCUM_STEPS,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         optim="adamw_torch_fused",
         learning_rate=LEARNING_RATE,
         lr_scheduler_type=LR_SCHEDULER,
@@ -267,6 +325,7 @@ def step_train(dataset: list[dict[str, Any]]) -> None:
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         processing_class=tokenizer,
+        data_collator=data_collator,
     )
 
     trainer.train()
