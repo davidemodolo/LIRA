@@ -32,6 +32,22 @@ from lira.core.llm import LocalHFProvider
 logger = logging.getLogger(__name__)
 
 
+def _clean_fg_response(response_text: str) -> str:
+    """Clean FunctionGemma response text by extracting content from tags if present."""
+    # Remove tool-call blocks first so we don't surface raw control tags.
+    text = re.sub(
+        r"<start_function_call>.*?(?:<end_function_call>|<start_function_response>|$)",
+        "",
+        response_text,
+        flags=re.DOTALL,
+    )
+    # Strip stray function response markers when model emits malformed tails.
+    text = re.sub(r"<start_function_response>|<end_function_response>", "", text)
+    # Strip Gemma special tokens that leak through when skip_special_tokens=False.
+    text = re.sub(r"<end_of_turn>|<bos>|<eos>|<pad>", "", text)
+    return text.strip()
+
+
 def _parse_fg_arguments(args_str: str) -> dict[str, Any]:
     """Parse FunctionGemma's key:value argument format into a Python dict.
 
@@ -126,7 +142,7 @@ class FunctionGemmaAgent(Agent):
     Key differences from the standard Agent:
     - LLM calls use apply_chat_template with tools= (matching training format)
     - Conversation history is a message list, not a flat string
-    - Tool call output is parsed from <tool_call>...</tool_call> tokens
+    - Tool call output is parsed from <start_function_call>...<end_function_call> tokens
     """
 
     def __init__(self, config: AgentConfig | None = None) -> None:
@@ -143,7 +159,9 @@ class FunctionGemmaAgent(Agent):
 
     # ── Prompt building ────────────────────────────────────────────────────────
 
-    def _build_system_prompt(self, today: str, init_context: str, category_info: str) -> str:
+    def _build_system_prompt(
+        self, today: str, init_context: str, category_info: str
+    ) -> str:
         # Keep close to the bare _SYSTEM_PROMPT used during training.
         # Extra context (accounts, categories) is omitted here because the model
         # never saw it during finetuning and treating it as input confuses inference.
@@ -155,21 +173,56 @@ class FunctionGemmaAgent(Agent):
         """Parse FunctionGemma <start_function_call>...</end_function_call> output.
 
         FunctionGemma's chat template produces:
-            <start_function_call>call:tool_name{key:'val',...}<end_function_call>
+            <start_function_call>call:tool_name{key:<escape>val<escape>,...}<end_function_call>
 
         We extract the tool name and then parse the argument block via a simple
         key:value lexer that handles the template's <escape>-quoted strings.
         """
         parsed: list[dict[str, Any]] = []
-        # Match the function call blocks from the template
-        blocks = re.findall(
-            r"<start_function_call>call:(\w+)\{(.*?)}<end_function_call>",
+
+        # Capture the inner call payload even when the model omits/duplicates
+        # end tags and starts function-response markers immediately.
+        call_blocks = re.findall(
+            r"<start_function_call>\s*(.*?)(?:<end_function_call>|<start_function_response>|$)",
             response_text,
             re.DOTALL,
         )
-        for name, args_str in blocks:
+        logger.debug(
+            "_parse_fg_tool_calls | raw repr: %r", response_text[:500]
+        )
+        logger.debug(
+            "_parse_fg_tool_calls | call_blocks found: %d -> %r", len(call_blocks), call_blocks
+        )
+        for block in call_blocks:
+            stripped = block.strip()
+            match = re.search(
+                r"call\s*:\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*\{(.*)\}",
+                stripped,
+                re.DOTALL,
+            )
+            logger.debug(
+                "_parse_fg_tool_calls | block repr: %r | inner match: %s",
+                stripped,
+                match,
+            )
+            if not match:
+                continue
+            name, args_str = match.groups()
             arguments = _parse_fg_arguments(args_str.strip())
             parsed.append({"name": name, "arguments": arguments})
+
+        # Fallback for outputs where markers are malformed/escaped but the
+        # model still emits a `call:tool{...}` payload.
+        if not parsed:
+            fallback_blocks = re.findall(
+                r"call\s*:\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*\{(.*?)\}",
+                response_text,
+                re.DOTALL,
+            )
+            for name, args_str in fallback_blocks:
+                arguments = _parse_fg_arguments(args_str.strip())
+                parsed.append({"name": name, "arguments": arguments})
+
         return parsed
 
     # ── Tool result helpers ────────────────────────────────────────────────────
@@ -181,22 +234,28 @@ class FunctionGemmaAgent(Agent):
         results: list[Any],
     ) -> None:
         """Append assistant tool_calls + tool result messages for multi-turn context."""
-        messages.append({
-            "role": "assistant",
-            "tool_calls": [
+        messages.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {"name": c["name"], "arguments": c["arguments"]},
+                    }
+                    for c in calls
+                ],
+            }
+        )
+        for call, result in zip(calls, results, strict=True):
+            messages.append(
                 {
-                    "type": "function",
-                    "function": {"name": c["name"], "arguments": c["arguments"]},
+                    "role": "tool",
+                    "name": call["name"],
+                    "content": (
+                        json.dumps(result) if not isinstance(result, str) else result
+                    ),
                 }
-                for c in calls
-            ],
-        })
-        for call, result in zip(calls, results):
-            messages.append({
-                "role": "tool",
-                "name": call["name"],
-                "content": json.dumps(result) if not isinstance(result, str) else result,
-            })
+            )
 
     # ── Main loop ──────────────────────────────────────────────────────────────
 
@@ -212,7 +271,9 @@ class FunctionGemmaAgent(Agent):
         init_context, category_info = self._build_context_strings()
         system_prompt = self._build_system_prompt(today, init_context, category_info)
 
-        yield AgentEvent(kind="status", content="Analyzing request (FunctionGemma local model)")
+        yield AgentEvent(
+            kind="status", content="Analyzing request (FunctionGemma local model)"
+        )
 
         messages: list[dict[str, Any]] = [
             {"role": "developer", "content": system_prompt},
@@ -222,6 +283,7 @@ class FunctionGemmaAgent(Agent):
         visualizations: list[str] = []
         iterations = 0
         resolved_calls: list[dict[str, Any]] = []
+        last_read_results: list[Any] = []
 
         while iterations < self.config.max_iterations:
             iterations += 1
@@ -229,15 +291,28 @@ class FunctionGemmaAgent(Agent):
                 response_text = await self._provider.generate_structured(
                     messages, self._tools_list
                 )
-                logger.info("FG response (len=%d): %s...", len(response_text), response_text[:300])
-                yield AgentEvent(kind="llm_token", content=response_text)
+                logger.info(
+                    "FG response (len=%d): %s...",
+                    len(response_text),
+                    response_text[:300],
+                )
+                # Don't yield llm_token — FunctionGemma generates all tokens at once
+                # and the raw output contains control tags that pollute the UI before
+                # we've had a chance to parse and execute any tool calls.
 
                 tool_calls = self._parse_fg_tool_calls(response_text)
                 logger.info("Parsed tool_calls: %s", tool_calls)
 
                 if not tool_calls:
                     self._state = AgentState.COMPLETE
-                    final_message = response_text or "I didn't understand that. Can you rephrase?"
+                    final_message = _clean_fg_response(response_text)
+                    if not final_message and last_read_results:
+                        # If the model fails to render a response after read-only
+                        # calls, provide deterministic output from tool results.
+                        final_message = self._format_results(last_read_results)
+                    final_message = (
+                        final_message or "I didn't understand that. Can you rephrase?"
+                    )
                     response = AgentResponse(
                         state=AgentState.COMPLETE,
                         message=final_message,
@@ -245,9 +320,13 @@ class FunctionGemmaAgent(Agent):
                         visualizations=visualizations,
                         tool_calls=resolved_calls,
                     )
-                    self._append_history(user_input=user_input, assistant_output=final_message)
+                    self._append_history(
+                        user_input=user_input, assistant_output=final_message
+                    )
                     yield AgentEvent(
-                        kind="final", content=final_message, payload={"response": response}
+                        kind="final",
+                        content=final_message,
+                        payload={"response": response},
                     )
                     return
 
@@ -262,15 +341,24 @@ class FunctionGemmaAgent(Agent):
                     for call in read_calls:
                         yield AgentEvent(
                             kind="tool_call",
-                            payload={"name": call["name"], "arguments": call["arguments"]},
+                            payload={
+                                "name": call["name"],
+                                "arguments": call["arguments"],
+                            },
                         )
 
                     read_results, _ = await _execute_tool_calls(read_calls)
                     resolved_calls.extend(read_calls)
 
-                    for call, result in zip(read_calls, read_results):
-                        success = not (isinstance(result, str) and result.startswith("Error:"))
-                        if success and call["name"] == "generate_plot" and isinstance(result, dict):
+                    for call, result in zip(read_calls, read_results, strict=True):
+                        success = not (
+                            isinstance(result, str) and result.startswith("Error:")
+                        )
+                        if (
+                            success
+                            and call["name"] == "generate_plot"
+                            and isinstance(result, dict)
+                        ):
                             img = result.get("image_base64")
                             if img:
                                 visualizations.append(img)
@@ -285,9 +373,31 @@ class FunctionGemmaAgent(Agent):
                         )
 
                     self._append_tool_turn(messages, read_calls, read_results)
+                    last_read_results = read_results
 
                     if not mutation_calls:
-                        continue
+                        # FunctionGemma was only trained to emit tool calls, not to
+                        # summarise results in a follow-up turn.  Calling it again
+                        # produces only "<start_function_response>" with no useful text.
+                        # Format the results directly and return.
+                        self._state = AgentState.COMPLETE
+                        final_message = self._format_results(read_results)
+                        response = AgentResponse(
+                            state=AgentState.COMPLETE,
+                            message=final_message,
+                            iterations=iterations,
+                            visualizations=visualizations,
+                            tool_calls=resolved_calls,
+                        )
+                        self._append_history(
+                            user_input=user_input, assistant_output=final_message
+                        )
+                        yield AgentEvent(
+                            kind="final",
+                            content=final_message,
+                            payload={"response": response},
+                        )
+                        return
 
                 # HITL: pause for mutation confirmation
                 if mutation_calls and self.config.hitl_enabled:
@@ -307,9 +417,13 @@ class FunctionGemmaAgent(Agent):
                         tool_calls=resolved_calls,
                         pending_tool_calls=mutation_calls,
                     )
-                    self._append_history(user_input=user_input, assistant_output=preview_message)
+                    self._append_history(
+                        user_input=user_input, assistant_output=preview_message
+                    )
                     yield AgentEvent(
-                        kind="final", content=preview_message, payload={"response": response}
+                        kind="final",
+                        content=preview_message,
+                        payload={"response": response},
                     )
                     return
 
@@ -326,9 +440,15 @@ class FunctionGemmaAgent(Agent):
                 results, _ = await _execute_tool_calls(mutation_calls)
                 resolved_calls.extend(mutation_calls)
 
-                for call, result in zip(mutation_calls, results):
-                    success = not (isinstance(result, str) and result.startswith("Error:"))
-                    if success and call["name"] == "generate_plot" and isinstance(result, dict):
+                for call, result in zip(mutation_calls, results, strict=True):
+                    success = not (
+                        isinstance(result, str) and result.startswith("Error:")
+                    )
+                    if (
+                        success
+                        and call["name"] == "generate_plot"
+                        and isinstance(result, dict)
+                    ):
                         img = result.get("image_base64")
                         if img:
                             visualizations.append(img)
@@ -355,7 +475,9 @@ class FunctionGemmaAgent(Agent):
                     visualizations=visualizations,
                 )
                 self._append_history(user_input=user_input, assistant_output=message)
-                yield AgentEvent(kind="error", content=message, payload={"response": response})
+                yield AgentEvent(
+                    kind="error", content=message, payload={"response": response}
+                )
                 return
 
         # Max iterations reached

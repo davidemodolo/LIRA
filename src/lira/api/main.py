@@ -33,6 +33,10 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     force=True,
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("/tmp/lira_debug.log"),
+    ],
 )
 # Suppress noisy third-party loggers
 for _noisy in ("httpx", "httpcore", "sqlalchemy.engine", "yfinance", "urllib3"):
